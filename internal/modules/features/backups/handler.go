@@ -355,7 +355,7 @@ func (m Module) apiImportUpload(w http.ResponseWriter, r *http.Request, site *mo
 
 	// stream directly to disk — never buffer the whole upload in RAM
 	destPath := filepath.Join(importDir, fmt.Sprintf("upload-%d%s", time.Now().UnixNano(), archiveExt(name)))
-	out, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0640)
+	out, err := os.OpenFile(destPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0640)
 	if err != nil {
 		logger.Error("apiImportUpload: create dest file site %d: %v", site.ID, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
@@ -410,7 +410,7 @@ func (m Module) apiImportSFTP(w http.ResponseWriter, r *http.Request, site *mode
 	}
 
 	archivePath := filepath.Join(m.Manager.ImportDirFor(site.Name), req.Filename)
-	if _, err := os.Stat(archivePath); err != nil {
+	if fi, err := os.Lstat(archivePath); err != nil || !fi.Mode().IsRegular() {
 		apiutil.ErrorMsg(w, http.StatusNotFound, "file not found in import directory")
 		return
 	}

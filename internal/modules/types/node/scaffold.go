@@ -31,8 +31,16 @@ func scaffoldDir(dir string, cfg modules.ScaffoldConfig) error {
 			return fmt.Errorf("create dir %s: %w", d, err)
 		}
 	}
-	if err := os.MkdirAll(filepath.Join(dir, "backups"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "backups", "import"), 0755); err != nil {
 		return fmt.Errorf("create backups dir: %w", err)
+	}
+
+	// backups stays root-owned; only the import drop dir is SFTP-writable
+	if err := os.Chown(dir+"/backups/import", cfg.SiteUID, cfg.SiteUID); err != nil {
+		logger.Warn("could not chown backups/import: %v", err)
+	}
+	if err := os.Chmod(dir+"/backups/import", 02775); err != nil {
+		logger.Warn("could not chmod backups/import: %v", err)
 	}
 
 	if err := os.Chown(dir, 0, 0); err != nil {

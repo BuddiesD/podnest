@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync/atomic"
 
 	"podnest/internal/db"
 	"podnest/internal/logger"
@@ -30,6 +31,10 @@ type Manager struct {
 	db          *sql.DB
 	appPath     string
 	hostAppPath string
+
+	// importAsserted records that the backups/import dirs were re-applied
+	// since PodNest started
+	importAsserted atomic.Bool
 }
 
 // New returns an SFTP manager bound to the given podman client, database, and app paths
@@ -75,6 +80,9 @@ func (m *Manager) Ensure(ctx context.Context) error {
 	}
 	if running {
 		logger.Debug("global SFTP container already running")
+		if m.importAsserted.CompareAndSwap(false, true) {
+			m.assertImportDirs(ctx)
+		}
 		return nil
 	}
 
@@ -90,11 +98,59 @@ func (m *Manager) Ensure(ctx context.Context) error {
 			return err
 		}
 		logger.Debug("global SFTP container restarted")
+		m.importAsserted.Store(true)
+		m.assertImportDirs(ctx)
 		return nil
 	}
 
 	logger.Debug("SFTP container does not exist, creating it...")
-	return m.create(ctx)
+	if err := m.create(ctx); err != nil {
+		return err
+	}
+	m.importAsserted.Store(true)
+	m.assertImportDirs(ctx)
+	return nil
+}
+
+// backupsCmds returns the commands that keep a site's backups dir root-owned
+// and read-only over SFTP while backups/import stays writable by the site.
+// backups/local holds the restic repo, so the SFTP user must never be able to
+// rename or replace entries directly inside backups.
+func backupsCmds(siteName string, uid int) [][]string {
+	backups := "/home/" + siteName + "/backups"
+	return [][]string{
+		{"chown", "0:0", backups},
+		{"chmod", "0755", backups},
+		{"mkdir", "-p", backups + "/import"},
+		{"chown", fmt.Sprintf("%d:%d", uid, uid), backups + "/import"},
+		{"chmod", "2775", backups + "/import"},
+	}
+}
+
+// assertImportDirs re-applies backupsCmds for every site with SFTP credentials
+// so existing sites get a writable import drop dir
+func (m *Manager) assertImportDirs(ctx context.Context) {
+	if m.db == nil {
+		return
+	}
+
+	creds, err := db.ListSFTPCreds(m.db)
+	if err != nil {
+		logger.Error("SFTP: list creds for import dirs: %v", err)
+		return
+	}
+
+	for _, c := range creds {
+		// skip credentials whose site has no backups dir yet
+		if _, err := os.Stat(m.appPath + "/sites/" + c.Username + "/backups"); err != nil {
+			continue
+		}
+		for _, cmd := range backupsCmds(c.Username, c.UID) {
+			if err := m.exec(ctx, cmd); err != nil {
+				logger.Warn("SFTP: import dir exec %v: %v", cmd, err)
+			}
+		}
+	}
 }
 
 // setPassword sets a user's password inside the running SFTP container, piping
@@ -148,7 +204,7 @@ func (m *Manager) AddUser(ctx context.Context, siteName, password string, uid in
 
 	// ownership fixups — the site directories may not be scaffolded yet, so
 	// these are advisory and re-asserted on the next add
-	for _, cmd := range [][]string{
+	for _, cmd := range append([][]string{
 		// chroot root (/home/sitename) must be root-owned and not group/world
 		// writable or sshd refuses the session after a successful auth
 		{"chown", "0:0", "/home/" + siteName},
@@ -158,10 +214,7 @@ func (m *Manager) AddUser(ctx context.Context, siteName, password string, uid in
 		{"chown", "-R", fmt.Sprintf("%d:%d", uid, uid), "/home/" + siteName + "/redis"},
 		{"chown", "-R", fmt.Sprintf("%d:%d", uid, uid), "/home/" + siteName + "/db"},
 		{"chmod", "2775", "/home/" + siteName + "/html"},
-		// backups dir — root:siteUID, read-only for the SFTP user
-		{"chown", fmt.Sprintf("root:%d", uid), "/home/" + siteName + "/backups"},
-		{"chmod", "0750", "/home/" + siteName + "/backups"},
-	} {
+	}, backupsCmds(siteName, uid)...) {
 		if err := m.exec(ctx, cmd); err != nil {
 			logger.Warn("sftp AddUser exec %v: %v", cmd, err)
 		}

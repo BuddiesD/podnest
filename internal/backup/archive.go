@@ -111,11 +111,32 @@ func extractArchive(src, destDir string) error {
 	return nil
 }
 
+// openArchive opens an import archive for reading. The import drop dir is
+// writable by the site's SFTP user, so the archive may be a symlink to another
+// site's files or a FIFO that would block the restore forever; only a regular
+// file opened without following links is accepted.
+func openArchive(src string) (*os.File, error) {
+	f, err := os.OpenFile(src, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, fmt.Errorf("openArchive: %w", err)
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, fmt.Errorf("openArchive: stat: %w", err)
+	}
+	if !fi.Mode().IsRegular() {
+		f.Close()
+		return nil, fmt.Errorf("openArchive: %s is not a regular file", filepath.Base(src))
+	}
+	return f, nil
+}
+
 // extractTarGz extracts a .tar.gz archive into destDir
 func extractTarGz(src, destDir string, budget *extractBudget) error {
 
 	// open the file and wrap in a gzip reader
-	f, err := os.Open(src)
+	f, err := openArchive(src)
 	if err != nil {
 		return err
 	}
@@ -140,8 +161,16 @@ func extractTarXz(src, destDir string, budget *extractBudget) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
+	// open the archive here rather than letting xz resolve the path itself
+	f, err := openArchive(src)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
 	// decompress via xz CLI, pipe stdout into the tar reader
-	xzCmd := exec.CommandContext(ctx, "xz", "-d", "-c", src)
+	xzCmd := exec.CommandContext(ctx, "xz", "-d", "-c")
+	xzCmd.Stdin = f
 	pr, err := xzCmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("extractTarXz: stdout pipe: %w", err)
@@ -220,18 +249,16 @@ func extractTar(tr *tar.Reader, destDir string, budget *extractBudget) error {
 // extractZip extracts a .zip archive into destDir, guarding against path traversal
 func extractZip(src, destDir string, budget *extractBudget) error {
 
-	// stat the file to get its size for zip.OpenReader
-	fi, err := os.Stat(src)
+	// open the file and stat it for its size for zip.NewReader
+	f, err := openArchive(src)
+	if err != nil {
+		return fmt.Errorf("extractZip: %w", err)
+	}
+	defer f.Close()
+	fi, err := f.Stat()
 	if err != nil {
 		return fmt.Errorf("extractZip: stat: %w", err)
 	}
-
-	// open the file and create a zip reader
-	f, err := os.Open(src)
-	if err != nil {
-		return fmt.Errorf("extractZip: open: %w", err)
-	}
-	defer f.Close()
 	zr, err := zip.NewReader(f, fi.Size())
 	if err != nil {
 		return fmt.Errorf("extractZip: reader: %w", err)

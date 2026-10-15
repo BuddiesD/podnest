@@ -310,7 +310,9 @@ func (m *Manager) ListImportFiles(siteName string) ([]string, error) {
 	// filter for supported archive formats
 	var files []string
 	for _, e := range entries {
-		if e.IsDir() {
+		// the SFTP user owns this dir, so only surface plain files — never
+		// symlinks, FIFOs or other special files
+		if !e.Type().IsRegular() {
 			continue
 		}
 		n := e.Name()
