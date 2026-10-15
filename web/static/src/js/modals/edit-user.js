@@ -20,6 +20,7 @@ export async function showEditUserModal(root, uid) {
     } catch (e) { toast.error(e.message); return; }
 
     const isAdmin = window.KP?.user?.role === 99;
+    const isSelf = Number(uid) === Number(window.KP?.user?.id);
 
     const html = `
         <div id="kp-edit-user-modal" uk-modal>
@@ -68,10 +69,11 @@ export async function showEditUserModal(root, uid) {
                             <label class="kp-label">New Password</label>
                             <input class="uk-input kp-input" name="password" type="password" placeholder="••••••••" uk-tooltip="leave blank to keep">
                         </div>
-                        <div class="uk-margin" id="edit-user-current-pw" hidden>
+                        ${isSelf ? `
+                        <div class="uk-margin" id="edit-user-current-pw">
                             <label class="uk-form-label">Current Password</label>
                             <input class="uk-input kp-input" name="current_password" type="password" placeholder="••••••••" uk-tooltip="required when changing your own password">
-                        </div>                            
+                        </div>` : ""}                      
                     </div>
                     <div class="uk-flex uk-flex-right uk-margin-top" style="gap:8px">
                         <button type="button" class="uk-button kp-btn-ghost uk-modal-close">Cancel</button>
@@ -139,9 +141,7 @@ export async function showEditUserModal(root, uid) {
         const pw = fd.get("password");
         if (pw) body.password = pw;
 
-        if (Number(uid) === Number(window.KP?.user?.id)) {
-            document.getElementById("edit-user-current-pw")?.removeAttribute("hidden");
-        }
+        if (pw && isSelf) body.current_password = fd.get("current_password");
 
         try {
             await api.put(`/users/${uid}`, body);
