@@ -425,6 +425,15 @@ func (m *Manager) IsRestoring(siteID int64) bool {
 	return ok
 }
 
+// ImportError returns the error from the last failed import onto the given
+// site ID, or "" when the last import succeeded or none has run
+func (m *Manager) ImportError(siteID int64) string {
+	if v, ok := m.importErrs.Load(siteID); ok {
+		return v.(string)
+	}
+	return ""
+}
+
 // restoreFiles runs restic restore for the file tree snapshot matching the tag
 func (m *Manager) restoreFiles(ctx context.Context, repoPath string, env []string, tag, siteDir string) error {
 

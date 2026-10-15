@@ -141,7 +141,7 @@ func (m Module) apiRestoreBackup(w http.ResponseWriter, r *http.Request, site *m
 // apiRestoreStatus returns whether a restore is currently in progress for a site.
 func (m Module) apiRestoreStatus(w http.ResponseWriter, _ *http.Request, site *models.Site) {
 	active := m.Manager.IsRestoring(site.ID)
-	apiutil.JSON(w, http.StatusOK, map[string]bool{"active": active})
+	apiutil.JSON(w, http.StatusOK, map[string]any{"active": active, "error": m.Manager.ImportError(site.ID)})
 }
 
 // apiBackupStatus reports whether a manual backup is running for a site and

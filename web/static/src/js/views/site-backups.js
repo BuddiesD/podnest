@@ -156,24 +156,34 @@ function renderBackupList(backups) {
         </div>`;
 }
 
-// pollRestoreStatus polls the restore-status endpoint and dismisses the
-// progress modal once the restore completes or the deadline is exceeded
-function pollRestoreStatus(root, siteId) {
+// pollRestoreStatus polls the restore-status endpoint of the import's target
+// site and dismisses the progress modal once the import completes, fails, or
+// the deadline is exceeded
+function pollRestoreStatus(root, siteId, targetId) {
     const deadline = Date.now() + 30 * 60 * 1000;
     const poll = setInterval(async () => {
         try {
-            const res = await api.get(`/sites/${siteId}/backups/restore-status`);
+            const res = await api.get(`/sites/${targetId || siteId}/backups/restore-status`);
             if (!res?.active || Date.now() > deadline) {
                 clearInterval(poll);
                 hideProgressModal();
-                if (!res?.active) {
-                    toast.success('Import complete');
-                } else {
+                if (res?.active) {
                     toast.error('Import timed out — check server logs');
+                } else if (res?.error) {
+                    toast.error(`Import failed: ${res.error}`);
+                } else {
+                    toast.success('Import complete');
                 }
                 await loadBackupsPanel(root, siteId);
             }
-        } catch (_) { /* keep polling on transient errors */ }
+        } catch (_) {
+            // keep polling on transient errors, but never past the deadline
+            if (Date.now() > deadline) {
+                clearInterval(poll);
+                hideProgressModal();
+                toast.error('Import status unavailable — check server logs');
+            }
+        }
     }, 3000);
 }
 
@@ -454,7 +464,7 @@ export function wireBackupsPanel(root, siteId) {
             return;
         }
 
-        pollRestoreStatus(root, siteId);
+        pollRestoreStatus(root, siteId, targetID);
     });
 
     // SFTP restore (delegated)
@@ -478,6 +488,6 @@ export function wireBackupsPanel(root, siteId) {
             return;
         }
 
-        pollRestoreStatus(root, siteId);
+        pollRestoreStatus(root, siteId, targetID);
     });
 }

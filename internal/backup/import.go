@@ -38,11 +38,20 @@ var wpPrefixRe = regexp.MustCompile(`(?m)^\s*\$table_prefix\s*=\s*['"]([A-Za-z0-
 // ImportRestore extracts the archive at archivePath and restores it onto
 // targetSite. On success the archive file is deleted. The site is placed in
 // maintenance mode for the duration of the restore.
-func (m *Manager) ImportRestore(ctx context.Context, targetSite *models.Site, archivePath string) error {
+func (m *Manager) ImportRestore(ctx context.Context, targetSite *models.Site, archivePath string) (err error) {
 
 	// guard against concurrent restores on the same site
 	m.restoring.Store(targetSite.ID, true)
 	defer m.restoring.Delete(targetSite.ID)
+
+	// record the outcome for the status poll; deferred after the restoring
+	// flag so the error is stored before the site reports idle
+	m.importErrs.Delete(targetSite.ID)
+	defer func() {
+		if err != nil {
+			m.importErrs.Store(targetSite.ID, err.Error())
+		}
+	}()
 
 	// setup the site path
 	siteDir := filepath.Join(m.appPath, "sites", targetSite.Name)
@@ -176,8 +185,10 @@ func importFiles(srcDir, siteDir string) error {
 			return nil
 		}
 
-		// preserved target files in the web root are never overwritten
-		if dir, base := filepath.Split(rel); filepath.Clean(dir) == "html" && htmlPreserved(base) {
+		// preserved target files in the web root are never overwritten — except
+		// wp-config.php, where the archive's copy wins so its table prefix and
+		// custom defines carry over; rewriteWPConfig repoints its connection
+		if dir, base := filepath.Split(rel); filepath.Clean(dir) == "html" && base != "wp-config.php" && htmlPreserved(base) {
 			return nil
 		}
 
