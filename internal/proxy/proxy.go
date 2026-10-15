@@ -26,6 +26,7 @@ import (
 
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/quic-go/quic-go/http3"
+	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 )
 
@@ -289,6 +290,9 @@ func New(cfg Config) *Proxy {
 				return cert, err
 			},
 			MinVersion: tls.VersionTLS12,
+			// acme-tls/1 must be advertised or Go rejects Let's Encrypt's
+			// TLS-ALPN-01 validation handshake before autocert can answer it
+			NextProtos: []string{"h2", "http/1.1", acme.ALPNProto},
 			// LRU session cache reduces full TLS handshakes for returning clients;
 			// 1024 entries covers ~1024 concurrent session tickets in memory
 			ClientSessionCache: tls.NewLRUClientSessionCache(1024),
