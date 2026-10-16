@@ -79,6 +79,20 @@ func (h *Handler) apiHealthStream(w http.ResponseWriter, r *http.Request) {
 		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	})
 
+	// the pong handler only runs inside a read, and a hijacked connection's
+	// request context is not cancelled when the client goes away — this loop
+	// does both, closing done on disconnect or a missed pong deadline
+	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			if _, _, err := conn.NextReader(); err != nil {
+				return
+			}
+		}
+	}()
+
 	pingTicker := time.NewTicker(30 * time.Second)
 	defer pingTicker.Stop()
 
@@ -120,6 +134,8 @@ func (h *Handler) apiHealthStream(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-ctx.Done():
+			return
+		case <-done:
 			return
 		case <-pingTicker.C:
 			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
