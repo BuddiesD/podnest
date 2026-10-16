@@ -27,11 +27,10 @@ func CreateRedis(ctx context.Context, client modules.PodmanClient, cfg modules.P
 			// because CHOWN is dropped and SKIP_FIX_PERMS skips the entrypoint chown
 			{Type: "tmpfs", Destination: "/data", Options: []string{"rw", "nosuid", "nodev", "mode=0777", "size=256m"}},
 		},
-		ReadOnly:    true,
-		CapDrop:     []string{"ALL"},
-		CapAdd:      []string{"SETUID", "SETGID"},
-		SecOpts:     []string{"no-new-privileges:true"},
-		Healthcheck: modules.HC(modules.HCRoleRedis),
+		ReadOnly: true,
+		CapDrop:  []string{"ALL"},
+		CapAdd:   []string{"SETUID", "SETGID"},
+		SecOpts:  []string{"no-new-privileges:true"},
 	}); err != nil {
 		return fmt.Errorf("create redis: %w", err)
 	}

@@ -48,17 +48,9 @@ func (a *PodmanClientAdapter) CreateContainer(ctx context.Context, cfg Container
 		CapDrop:    cfg.CapDrop,
 		SecOpts:    cfg.SecOpts,
 		ReadOnlyFS: cfg.ReadOnly,
-	}
-
-	// map healthcheck if defined
-	if cfg.Healthcheck != nil {
-		spec.Healthcheck = &podman.HealthcheckConfig{
-			Test:        cfg.Healthcheck.Test,
-			Interval:    cfg.Healthcheck.Interval,
-			Timeout:     cfg.Healthcheck.Timeout,
-			Retries:     cfg.Healthcheck.Retries,
-			StartPeriod: cfg.Healthcheck.StartPeriod,
-		}
+		// NONE overrides any HEALTHCHECK baked into the image — probes would
+		// hit the site itself, and container state comes from podman events
+		Healthcheck: &podman.HealthcheckConfig{Test: []string{"NONE"}},
 	}
 
 	_, err := a.Client.CreateContainer(ctx, spec)

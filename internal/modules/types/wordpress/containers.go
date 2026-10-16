@@ -59,11 +59,10 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 			{Type: "tmpfs", Destination: "/tmp", Options: []string{"rw", "nosuid", "nodev", "mode=1777", "size=512m"}},
 			{Type: "tmpfs", Destination: "/run", Options: []string{"rw", "nosuid", "nodev", "mode=0755", "size=16m"}},
 		},
-		ReadOnly:    true,
-		CapDrop:     []string{"ALL"},
-		CapAdd:      []string{"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "FOWNER"},
-		SecOpts:     []string{"no-new-privileges:true"},
-		Healthcheck: modules.HC(modules.HCRolePHP),
+		ReadOnly: true,
+		CapDrop:  []string{"ALL"},
+		CapAdd:   []string{"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "FOWNER"},
+		SecOpts:  []string{"no-new-privileges:true"},
 	}); err != nil {
 		return fmt.Errorf("create php: %w", err)
 	}

@@ -48,11 +48,10 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 			{Type: "bind", Source: cfg.SiteDir + "/html", Destination: "/app", Options: []string{"rw", "z"}},
 			{Type: "tmpfs", Destination: "/tmp", Options: []string{"rw", "nosuid", "nodev", "mode=1777", "size=256m"}},
 		},
-		ReadOnly:    true,
-		CapDrop:     []string{"ALL"},
-		CapAdd:      []string{"SETUID", "SETGID"},
-		SecOpts:     []string{"no-new-privileges:true"},
-		Healthcheck: modules.HC(modules.HCRoleAppPython),
+		ReadOnly: true,
+		CapDrop:  []string{"ALL"},
+		CapAdd:   []string{"SETUID", "SETGID"},
+		SecOpts:  []string{"no-new-privileges:true"},
 	}
 	if cfg.Site.StartCommand != "" {
 		appCfg.Command = strings.Fields(cfg.Site.StartCommand)

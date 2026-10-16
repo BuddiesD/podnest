@@ -34,11 +34,10 @@ func CreateNginx(ctx context.Context, client modules.PodmanClient, cfg modules.P
 			{Type: "bind", Source: cfg.SiteDir + "/nginx/nginx.conf", Destination: "/etc/nginx/nginx.conf", Options: []string{"ro", "z"}},
 			{Type: "bind", Source: cfg.SiteDir + "/nginx/conf.d", Destination: "/etc/nginx/conf.d", Options: []string{"ro", "z"}},
 		},
-		ReadOnly:    true,
-		CapDrop:     []string{"ALL"},
-		CapAdd:      []string{"NET_BIND_SERVICE", "CHOWN", "SETUID", "SETGID"},
-		SecOpts:     []string{"no-new-privileges:true"},
-		Healthcheck: modules.HC(modules.HCRoleNginx),
+		ReadOnly: true,
+		CapDrop:  []string{"ALL"},
+		CapAdd:   []string{"NET_BIND_SERVICE", "CHOWN", "SETUID", "SETGID"},
+		SecOpts:  []string{"no-new-privileges:true"},
 	}); err != nil {
 		return fmt.Errorf("create nginx: %w", err)
 	}

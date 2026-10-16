@@ -91,14 +91,10 @@ type Mount struct {
 	Options     []string `json:"options,omitempty"`
 }
 
-// HealthcheckConfig defines the health check command and timing for a container.
-// Interval, Timeout, and StartPeriod are in nanoseconds (use time.Duration values).
+// HealthcheckConfig carries the container health check test; PodNest only
+// ever sends ["NONE"] to disable any check defined by the image.
 type HealthcheckConfig struct {
-	Test        []string      `json:"Test"`
-	Interval    time.Duration `json:"Interval"`
-	Timeout     time.Duration `json:"Timeout"`
-	Retries     int           `json:"Retries"`
-	StartPeriod time.Duration `json:"StartPeriod"`
+	Test []string `json:"Test"`
 }
 
 // ContainerCreateResponse represents the response from the container creation endpoint, containing the new container's ID

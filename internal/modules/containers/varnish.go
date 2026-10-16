@@ -38,10 +38,9 @@ func CreateVarnish(ctx context.Context, client modules.PodmanClient, cfg modules
 		Mounts: []modules.Mount{
 			{Type: "bind", Source: cfg.SiteDir + "/varnish/default.vcl", Destination: "/etc/varnish/default.vcl", Options: []string{"ro", "z"}},
 		},
-		CapDrop:     []string{"ALL"},
-		CapAdd:      []string{"NET_BIND_SERVICE", "CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID", "IPC_LOCK"},
-		SecOpts:     []string{"no-new-privileges:true"},
-		Healthcheck: modules.HC(modules.HCRoleVarnish),
+		CapDrop: []string{"ALL"},
+		CapAdd:  []string{"NET_BIND_SERVICE", "CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID", "IPC_LOCK"},
+		SecOpts: []string{"no-new-privileges:true"},
 	}); err != nil {
 		return fmt.Errorf("create varnish: %w", err)
 	}

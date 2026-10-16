@@ -38,10 +38,9 @@ func CreatePMA(ctx context.Context, client modules.PodmanClient, cfg modules.Pod
 			"PHP_POST_MAX_SIZE":       "256M",
 			"UPLOAD_LIMIT":            "256M",
 		},
-		CapDrop:     []string{"ALL"},
-		CapAdd:      []string{"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "NET_BIND_SERVICE"},
-		SecOpts:     []string{"no-new-privileges:true"},
-		Healthcheck: modules.HC(modules.HCRolePMA),
+		CapDrop: []string{"ALL"},
+		CapAdd:  []string{"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "NET_BIND_SERVICE"},
+		SecOpts: []string{"no-new-privileges:true"},
 	}); err != nil {
 		return fmt.Errorf("create pma: %w", err)
 	}

@@ -28,10 +28,9 @@ func CreateMariaDB(ctx context.Context, client modules.PodmanClient, cfg modules
 			{Type: "bind", Source: cfg.SiteDir + "/db", Destination: "/var/lib/mysql", Options: []string{"z"}},
 			{Type: "bind", Source: cfg.SiteDir + "/db/my.cnf", Destination: "/etc/mysql/conf.d/custom.cnf", Options: []string{"ro", "z"}},
 		},
-		CapDrop:     []string{"ALL"},
-		CapAdd:      []string{"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "IPC_LOCK"},
-		SecOpts:     []string{"no-new-privileges:true"},
-		Healthcheck: modules.HC(modules.HCRoleDB),
+		CapDrop: []string{"ALL"},
+		CapAdd:  []string{"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "IPC_LOCK"},
+		SecOpts: []string{"no-new-privileges:true"},
 	}); err != nil {
 		return fmt.Errorf("create db: %w", err)
 	}
