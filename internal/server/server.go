@@ -153,7 +153,7 @@ func (s *Server) Start() error {
 	// then start the status checker so it cannot flip restorable sites to stopped first
 	s.goTracked(func() {
 		s.startupRestore()
-		s.syncPodStatuses()
+		s.watchPodStates()
 	})
 
 	// background session cleanup
@@ -174,7 +174,7 @@ func (s *Server) Start() error {
 	// background permission fixer
 	s.goTracked(s.permissionReaper)
 
-	// poll container health and resource stats every 10 seconds
+	// poll container resource stats every 10 seconds
 	s.goTracked(s.pollStats)
 
 	// monitor host resource usage and throttle offending pods when threshold is breached

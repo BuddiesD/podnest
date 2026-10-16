@@ -193,7 +193,7 @@ type Site struct {
 // ContainerHealth holds the last-known health state for a single container.
 type ContainerHealth struct {
 	Name   string `json:"name"`
-	Status string `json:"status"` // "healthy", "unhealthy", "starting", "none"
+	Status string `json:"status"` // podman container state: "running", "exited", "paused", "created", ...
 }
 
 // SFTPCred holds the global SFTP credentials for a site

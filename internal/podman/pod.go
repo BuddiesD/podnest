@@ -111,6 +111,19 @@ type ContainerStat struct {
 	MemPerc  float64
 }
 
+// PodSummary is a pod from the pod listing with its containers' states.
+type PodSummary struct {
+	Name       string                `json:"Name"`
+	Status     string                `json:"Status"`
+	Containers []PodSummaryContainer `json:"Containers"`
+}
+
+// PodSummaryContainer is one container's name and state within a PodSummary.
+type PodSummaryContainer struct {
+	Names  string `json:"Names"`
+	Status string `json:"Status"`
+}
+
 // pullImageTimeout bounds a single image pull; the 120s client deadline is far
 // too short for a cold pull of the base images
 const pullImageTimeout = 30 * time.Minute
@@ -509,22 +522,45 @@ func (c *Client) FlushCache(ctx context.Context, containerName string, cachePath
 
 }
 
-// ListPodStates returns the current state of every pod, keyed by pod name.
-// One call replaces a per-pod InspectPod for callers that only need state.
-func (c *Client) ListPodStates(ctx context.Context) (map[string]string, error) {
-	var pods []struct {
-		Name   string `json:"Name"`
-		Status string `json:"Status"`
-	}
+// ListPods returns every pod with its containers' states, keyed by pod name.
+// One call covers every pod and container, replacing per-pod and
+// per-container inspects for callers that only need state.
+func (c *Client) ListPods(ctx context.Context) (map[string]PodSummary, error) {
+	var pods []PodSummary
 	if err := c.get(ctx, "/v4.0.0/libpod/pods/json", &pods); err != nil {
 		return nil, fmt.Errorf("list pods: %w", err)
 	}
 
-	out := make(map[string]string, len(pods))
+	out := make(map[string]PodSummary, len(pods))
 	for _, p := range pods {
-		out[p.Name] = p.Status
+		out[p.Name] = p
 	}
 	return out, nil
+}
+
+// WatchEvents holds the Podman event stream open and calls onEvent for every
+// container or pod lifecycle event until the stream ends or ctx is cancelled.
+// The filter leaves out exec and attach events so WP-CLI runs and cron execs
+// do not trigger state refreshes.
+func (c *Client) WatchEvents(ctx context.Context, onEvent func()) error {
+	filters := url.QueryEscape(`{"type":["container","pod"],"event":["create","start","stop","died","kill","oom","pause","unpause","restart","remove"]}`)
+	body, err := c.stream(ctx, "/v4.0.0/libpod/events?stream=true&filters="+filters)
+	if err != nil {
+		return fmt.Errorf("events stream: %w", err)
+	}
+	defer body.Close()
+
+	dec := json.NewDecoder(body)
+	for {
+		var ev struct{}
+		if err := dec.Decode(&ev); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return fmt.Errorf("events stream: %w", err)
+		}
+		onEvent()
+	}
 }
 
 // PruneOrphanedPods removes any site pods (prefixed pn-) that are in a degraded or created state
@@ -719,25 +755,6 @@ func (c *Client) ReloadVarnish(ctx context.Context, name string) error {
 	return nil
 }
 
-// ContainerHealthState returns the Podman health status string for a container:
-// "healthy", "unhealthy", "starting", or "none" (no healthcheck defined).
-func (c *Client) ContainerHealthState(ctx context.Context, name string) (string, error) {
-	var inspect struct {
-		State struct {
-			Health struct {
-				Status string `json:"Status"`
-			} `json:"Health"`
-		} `json:"State"`
-	}
-	if err := c.get(ctx, "/v4.0.0/libpod/containers/"+name+"/json", &inspect); err != nil {
-		return "none", err
-	}
-	if inspect.State.Health.Status == "" {
-		return "none", nil
-	}
-	return inspect.State.Health.Status, nil
-}
-
 // UpdateContainerResources applies or removes a memory limit on a running container
 // via the Docker-compat update endpoint. Set limitBytes=0 to remove the limit.
 func (c *Client) UpdateContainerResources(ctx context.Context, name string, limitBytes int64) error {
@@ -756,13 +773,9 @@ func (c *Client) UpdateContainerResources(ctx context.Context, name string, limi
 	return nil
 }
 
-// ContainerStats returns resource usage for the named containers. The stats
-// endpoint accepts a repeated containers filter, so the host-wide payload is
-// never serialized for callers that only want a few pods.
+// ContainerStats returns resource usage for the named containers, or for
+// every running container when names is empty.
 func (c *Client) ContainerStats(ctx context.Context, names []string) ([]ContainerStat, error) {
-	if len(names) == 0 {
-		return nil, nil
-	}
 
 	var raw struct {
 		Stats []struct {

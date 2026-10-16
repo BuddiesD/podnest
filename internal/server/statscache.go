@@ -18,11 +18,13 @@ type PodHealth struct {
 	UpdatedAt  time.Time
 }
 
-// statsCache is the shared in-memory store for container health and resource stats.
-// Populated by the background poller; read by the WebSocket handler and resource watcher.
+// statsCache is the shared in-memory store for container states and resource stats.
+// States come from the pod state watcher and stats from the background poller;
+// both are read by the WebSocket handler and resource watcher.
 type statsCache struct {
 	mu     sync.RWMutex
 	health map[string]PodHealth              // keyed by pod name
+	podOf  map[string]string                 // container name → pod name
 	stats  map[string][]podman.ContainerStat // keyed by pod name
 }
 
@@ -30,15 +32,36 @@ type statsCache struct {
 func newStatsCache() *statsCache {
 	return &statsCache{
 		health: make(map[string]PodHealth),
+		podOf:  make(map[string]string),
 		stats:  make(map[string][]podman.ContainerStat),
 	}
 }
 
-// setHealth stores the latest health state for a pod.
-func (c *statsCache) setHealth(podName string, containers []models.ContainerHealth) {
+// setStates replaces every pod's container states in one swap, so pods that
+// no longer exist drop out, and rebuilds the container-to-pod index.
+func (c *statsCache) setStates(states map[string][]models.ContainerHealth) {
+	health := make(map[string]PodHealth, len(states))
+	podOf := make(map[string]string)
+	now := time.Now()
+	for pod, containers := range states {
+		health[pod] = PodHealth{Containers: containers, UpdatedAt: now}
+		for _, ct := range containers {
+			podOf[ct.Name] = pod
+		}
+	}
+
 	c.mu.Lock()
-	c.health[podName] = PodHealth{Containers: containers, UpdatedAt: time.Now()}
+	c.health = health
+	c.podOf = podOf
 	c.mu.Unlock()
+}
+
+// podFor returns the pod a container belongs to.
+func (c *statsCache) podFor(container string) (string, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	pod, ok := c.podOf[container]
+	return pod, ok
 }
 
 // getHealth returns the last-known health state for a pod.
@@ -49,10 +72,11 @@ func (c *statsCache) getHealth(podName string) (PodHealth, bool) {
 	return h, ok
 }
 
-// setStats stores the latest resource stats for a pod.
-func (c *statsCache) setStats(podName string, stats []podman.ContainerStat) {
+// setAllStats replaces the stats for every pod in one swap, so stopped pods
+// stop counting toward host usage.
+func (c *statsCache) setAllStats(stats map[string][]podman.ContainerStat) {
 	c.mu.Lock()
-	c.stats[podName] = stats
+	c.stats = stats
 	c.mu.Unlock()
 }
 

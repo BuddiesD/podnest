@@ -19,7 +19,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -34,8 +33,9 @@ import (
 	"podnest/internal/sftp"
 )
 
-// pollStatsConcurrency bounds in-flight Podman calls per poll cycle
-const pollStatsConcurrency = 8
+// podStateBackstop is how often pod states are reconciled without an event,
+// covering anything missed while the event stream was reconnecting.
+const podStateBackstop = 5 * time.Minute
 
 // sessionReaper purges expired sessions and PMA tokens hourly.
 func (s *Server) sessionReaper() {
@@ -378,52 +378,100 @@ func (s *Server) startupRestore() {
 	}
 }
 
-// syncPodStatuses periodically reconciles DB site statuses against actual
-// Podman pod states, correcting any drift caused by crashes or manual intervention.
-func (s *Server) syncPodStatuses() {
+// watchPodStates keeps DB site statuses and the cached container states in
+// step with Podman. A reconcile runs on start, after container and pod
+// lifecycle events (bursts coalesced), and on a slow backstop ticker.
+func (s *Server) watchPodStates() {
+	trigger := make(chan struct{}, 1)
+	notify := func() {
+		select {
+		case trigger <- struct{}{}:
+		default:
+		}
+	}
 
-	fix := func() {
-		sites, err := db.GetAllSites(s.cfg.DB)
-		if err != nil {
-			logger.Error("syncPodStatuses: failed to load sites: %v", err)
+	// hold the event stream open, reconnecting after a pause; each reconnect
+	// triggers a reconcile since events may have been missed while it was down
+	s.goTracked(func() {
+		for {
+			if err := s.podman.WatchEvents(s.ctx, notify); err != nil {
+				logger.Warn("watchPodStates: %v", err)
+			}
+			if !s.sleep(5 * time.Second) {
+				return
+			}
+			notify()
+		}
+	})
+
+	s.reconcilePods()
+	ticker := time.NewTicker(podStateBackstop)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.ctx.Done():
 			return
+		case <-ticker.C:
+		case <-trigger:
+			// a pod start or stop emits a burst of events — let it settle
+			if !s.sleep(500 * time.Millisecond) {
+				return
+			}
+			select {
+			case <-trigger:
+			default:
+			}
+		}
+		s.reconcilePods()
+	}
+}
+
+// reconcilePods lists every pod once, caches each site pod's container
+// states, and corrects DB site statuses that have drifted from the pod state.
+func (s *Server) reconcilePods() {
+	sites, err := db.GetAllSites(s.cfg.DB)
+	if err != nil {
+		logger.Error("reconcilePods: failed to load sites: %v", err)
+		return
+	}
+
+	pods, err := s.podman.ListPods(s.ctx)
+	if err != nil {
+		logger.Error("reconcilePods: failed to list pods: %v", err)
+		return
+	}
+
+	states := make(map[string][]models.ContainerHealth, len(sites))
+	for _, site := range sites {
+		if !modules.TypeModule(site.SiteType).HasPod() {
+			continue
 		}
 
-		// one pod listing per cycle rather than an InspectPod per site
-		states, err := s.podman.ListPodStates(context.Background())
-		if err != nil {
-			logger.Error("syncPodStatuses: failed to list pods: %v", err)
-			return
-		}
-
-		for _, site := range sites {
-			if !modules.TypeModule(site.SiteType).HasPod() {
-				continue
-			}
-
-			state, ok := states[podman.PodName(site.Name)]
-			if !ok {
-				if site.SiteStatus != models.StatusStopped {
-					_ = db.UpdateSiteStatus(s.cfg.DB, site.ID, models.StatusStopped)
-				}
-				continue
-			}
-			if state == "Running" && site.SiteStatus != models.StatusRunning {
-				logger.Debug("syncPodStatuses: correcting site %d status to running", site.ID)
-				_ = db.UpdateSiteStatus(s.cfg.DB, site.ID, models.StatusRunning)
-			} else if state != "Running" && site.SiteStatus == models.StatusRunning {
-				logger.Debug("syncPodStatuses: correcting site %d status to stopped", site.ID)
+		podName := podman.PodName(site.Name)
+		pod, ok := pods[podName]
+		if !ok {
+			if site.SiteStatus != models.StatusStopped {
 				_ = db.UpdateSiteStatus(s.cfg.DB, site.ID, models.StatusStopped)
 			}
+			continue
+		}
+
+		containers := make([]models.ContainerHealth, 0, len(pod.Containers))
+		for _, c := range pod.Containers {
+			containers = append(containers, models.ContainerHealth{Name: c.Names, Status: c.Status})
+		}
+		states[podName] = containers
+
+		if pod.Status == "Running" && site.SiteStatus != models.StatusRunning {
+			logger.Debug("reconcilePods: correcting site %d status to running", site.ID)
+			_ = db.UpdateSiteStatus(s.cfg.DB, site.ID, models.StatusRunning)
+		} else if pod.Status != "Running" && site.SiteStatus == models.StatusRunning {
+			logger.Debug("reconcilePods: correcting site %d status to stopped", site.ID)
+			_ = db.UpdateSiteStatus(s.cfg.DB, site.ID, models.StatusStopped)
 		}
 	}
 
-	fix()
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-	for range ticker.C {
-		fix()
-	}
+	s.stats.setStates(states)
 }
 
 // rotateLogs compresses access and WAF logs older than 2 days and deletes
@@ -695,68 +743,26 @@ func compressLogFile(src, dst string) error {
 	return err
 }
 
-// pollStats periodically samples container health states and resource usage for
-// all running sites and writes results into the shared statsCache.
-// Fires immediately on startup then every 10 seconds.
+// pollStats samples resource usage for every running container in a single
+// Podman call and files it by pod in the shared statsCache for the resource
+// watcher. Fires immediately on startup then every 10 seconds.
 func (s *Server) pollStats() {
 	poll := func() {
-		ctx := s.ctx
-
-		sites, err := db.GetAllSites(s.cfg.DB)
+		all, err := s.podman.ContainerStats(s.ctx, nil)
 		if err != nil {
-			logger.Error("pollStats: failed to load sites: %v", err)
+			logger.Debug("pollStats: stats unavailable: %v", err)
 			return
 		}
 
-		var wg sync.WaitGroup
-		sem := make(chan struct{}, pollStatsConcurrency)
-
-		for _, site := range sites {
-			// skip site types that have no pod
-			if !modules.TypeModule(site.SiteType).HasPod() {
-				continue
+		// containers outside any site pod (podnest, sftp, fail2ban) are not
+		// in the pod index and are skipped
+		byPod := make(map[string][]podman.ContainerStat)
+		for _, st := range all {
+			if pod, ok := s.stats.podFor(st.Name); ok {
+				byPod[pod] = append(byPod[pod], st)
 			}
-			if site.SiteStatus != models.StatusRunning {
-				continue
-			}
-
-			wg.Add(1)
-			go func(podName string) {
-				defer wg.Done()
-				sem <- struct{}{}
-				defer func() { <-sem }()
-
-				// --- health states ---
-				inspect, err := s.podman.InspectPod(ctx, podName)
-				if err != nil {
-					return
-				}
-				names := make([]string, 0, len(inspect.Containers))
-				healthEntries := make([]models.ContainerHealth, 0, len(inspect.Containers))
-				for _, c := range inspect.Containers {
-					names = append(names, c.Name)
-					status, err := s.podman.ContainerHealthState(ctx, c.Name)
-					if err != nil {
-						status = "none"
-					}
-					healthEntries = append(healthEntries, models.ContainerHealth{
-						Name:   c.Name,
-						Status: status,
-					})
-				}
-				s.stats.setHealth(podName, healthEntries)
-
-				// --- resource stats ---
-				cstats, err := s.podman.ContainerStats(ctx, names)
-				if err != nil {
-					logger.Debug("pollStats: stats unavailable for pod %s: %v", podName, err)
-					return
-				}
-				s.stats.setStats(podName, cstats)
-			}(podman.PodName(site.Name))
 		}
-
-		wg.Wait()
+		s.stats.setAllStats(byPod)
 	}
 
 	poll()
