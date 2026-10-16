@@ -200,7 +200,8 @@ func (h *Handler) apiSiteDrilldown(w http.ResponseWriter, r *http.Request) {
 	apiutil.JSON(w, http.StatusOK, entries)
 }
 
-// apiSitePodStats upgrades to WebSocket and pushes container stats every 2s.
+// apiSitePodStats upgrades to WebSocket and relays the site's shared pod stats
+// stream, which Podman pushes every 2s while at least one viewer is connected.
 func (h *Handler) apiSitePodStats(w http.ResponseWriter, r *http.Request) {
 	site, ok := h.Resolve(w, r)
 	if !ok {
@@ -221,35 +222,46 @@ func (h *Handler) apiSitePodStats(w http.ResponseWriter, r *http.Request) {
 		names[i] = modules.ContainerName(site.Name, role)
 	}
 
-	ctx := r.Context()
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
+	// the pong handler only runs inside a read, and a hijacked connection's
+	// request context is not cancelled when the client goes away — this loop
+	// does both, closing done on disconnect or a missed pong deadline
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	})
+	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			if _, _, err := conn.NextReader(); err != nil {
+				return
+			}
+		}
+	}()
 
-	// consecutive fetch failures — used to close the stream when the pod is
-	// gone (deleted/stopped) so the ticker does not loop forever logging 404s
-	fails := 0
+	pingTicker := time.NewTicker(30 * time.Second)
+	defer pingTicker.Stop()
+
+	feed, unsubscribe := podHub.subscribe(h.Podman, site.Name, names)
+	defer unsubscribe()
 
 	logger.Debug("stats: ws pod stream opened for site %d", site.ID)
 
 	for {
 		select {
-		case <-ctx.Done():
+		case <-done:
 			logger.Debug("stats: ws pod stream closed for site %d", site.ID)
 			return
-		case <-ticker.C:
-			payload, err := h.fetchPodStats(ctx, names)
-			if err != nil {
-				// tolerate transient failures while a pod is still starting, but
-				// stop the stream once failures persist (pod deleted or stopped)
-				fails++
-				if fails >= 3 {
-					logger.Debug("stats: closing pod stream for site %d after %d consecutive failures: %v", site.ID, fails, err)
-					return
-				}
-				continue
+		case <-pingTicker.C:
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
 			}
-			fails = 0
-			if err := conn.WriteJSON(payload); err != nil {
+		case payload, ok := <-feed:
+			if !ok {
+				logger.Debug("stats: closing pod stream for site %d — stats unavailable", site.ID)
+				return
+			}
+			if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
 				logger.Debug("stats: ws write failed for site %d: %v", site.ID, err)
 				return
 			}
@@ -440,31 +452,6 @@ func (h *Handler) siteDomainsFor(site *models.Site) ([]string, error) {
 		out[i] = d.Domain
 	}
 	return out, nil
-}
-
-// fetchPodStats calls the Podman stats REST endpoint for the given container
-// names and returns a podStatsResponse with only the containers that responded.
-func (h *Handler) fetchPodStats(ctx context.Context, names []string) (*podStatsResponse, error) {
-	path := "/v4.0.0/libpod/containers/stats?stream=false"
-	for _, n := range names {
-		path += "&containers=" + n
-	}
-
-	var raw podmanStatsWrapper
-	if err := h.Podman.GetJSON(ctx, path, &raw); err != nil {
-		return nil, err
-	}
-
-	resp := &podStatsResponse{Containers: make([]podStatEntry, 0, len(raw.Stats))}
-	for _, e := range raw.Stats {
-		resp.Containers = append(resp.Containers, podStatEntry{
-			Name:       e.Name,
-			CPUPercent: e.CPU,
-			MemUsed:    e.MemUsage,
-			MemLimit:   e.MemLimit,
-		})
-	}
-	return resp, nil
 }
 
 // seekToCutoff positions f at the first log line at or after cutoff. The access
