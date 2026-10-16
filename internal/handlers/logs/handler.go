@@ -100,18 +100,10 @@ func (h *Handler) apiSiteLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// configure ping/pong keepalive — clients that disappear without closing
-	// the WebSocket would otherwise hold the goroutine and file handle forever
-	conn.SetPongHandler(func(string) error {
-		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	})
-
 	// start a ping ticker to detect dead clients
-	pingTicker := time.NewTicker(30 * time.Second)
-	defer pingTicker.Stop()
 
 	containerName := podman.ContainerName(site.Name, container)
-	ctx := r.Context()
+	ctx := keepalive(r.Context(), conn)
 	path := fmt.Sprintf(
 		"/v4.0.0/libpod/containers/%s/logs?follow=true&stdout=true&stderr=true&tail=%d",
 		containerName, tail,
@@ -133,11 +125,6 @@ func (h *Handler) apiSiteLogs(w http.ResponseWriter, r *http.Request) {
 		case <-ctx.Done():
 			logger.Debug("log stream context cancelled for container %s", containerName)
 			return
-		case <-pingTicker.C:
-			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				// client gone — exit cleanly
-				return
-			}
 		default:
 		}
 
@@ -219,15 +206,7 @@ func (h *Handler) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// configure ping/pong keepalive — clients that disappear without closing
-	// the WebSocket would otherwise hold the goroutine and file handle forever
-	conn.SetPongHandler(func(string) error {
-		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	})
-
 	// start a ping ticker to detect dead clients
-	pingTicker := time.NewTicker(30 * time.Second)
-	defer pingTicker.Stop()
 
 	// all sites write WAF events to their per-site log regardless of type
 	siteDir, err := fileutil.SiteDir(h.AppPath+"/sites", site.Name)
@@ -237,7 +216,7 @@ func (h *Handler) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	wafLogPath := siteDir + "/logs/waf.log"
-	ctx := r.Context()
+	ctx := keepalive(r.Context(), conn)
 
 	// if the per-site waf.log doesn't exist yet, start live tail with no initial lines
 	initial, tailErr := tailLogLines(wafLogPath, tail)
@@ -274,11 +253,6 @@ func (h *Handler) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-pingTicker.C:
-			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				// client gone — exit cleanly
-				return
-			}
 		case <-ticker.C:
 			for {
 				line, err := reader.ReadString('\n')
@@ -300,6 +274,49 @@ func (h *Handler) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+// keepalive starts the read loop and pinger every log stream needs, returning
+// a context cancelled once the client disconnects or stops answering pings.
+// A hijacked connection's request context never sees the client go away and
+// the pong handler only runs inside a read, so without this a vanished client
+// holds the goroutine and file handle forever. Pings go out via WriteControl,
+// which is safe alongside the stream's own writes and keeps firing while a
+// container log stream is blocked on a quiet container.
+func keepalive(parent context.Context, conn *websocket.Conn) context.Context {
+	ctx, cancel := context.WithCancel(parent)
+
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	})
+	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+
+	go func() {
+		defer cancel()
+		for {
+			if _, _, err := conn.NextReader(); err != nil {
+				return
+			}
+		}
+	}()
+
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(10*time.Second)); err != nil {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+
+	return ctx
 }
 
 // tailMatching returns the last n lines satisfying keep, in chronological order.
@@ -400,15 +417,7 @@ func (h *Handler) apiSiteProxyLog(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// configure ping/pong keepalive — clients that disappear without closing
-	// the WebSocket would otherwise hold the goroutine and file handle forever
-	conn.SetPongHandler(func(string) error {
-		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	})
-
 	// start a ping ticker to detect dead clients
-	pingTicker := time.NewTicker(30 * time.Second)
-	defer pingTicker.Stop()
 
 	// all sites write to per-site access.log — no domain filtering needed
 	siteDir, err := fileutil.SiteDir(h.AppPath+"/sites", site.Name)
@@ -418,7 +427,7 @@ func (h *Handler) apiSiteProxyLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logPath := siteDir + "/logs/access.log"
-	ctx := r.Context()
+	ctx := keepalive(r.Context(), conn)
 
 	// send initial tail; if the file doesn't exist yet return no entries
 	initial, tailErr := tailLogLines(logPath, tail)
@@ -455,11 +464,6 @@ func (h *Handler) apiSiteProxyLog(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-pingTicker.C:
-			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				// client gone — exit cleanly
-				return
-			}
 		case <-ticker.C:
 			for {
 				line, err := reader.ReadString('\n')
@@ -498,14 +502,8 @@ func (h *Handler) apiGlobalProxyLog(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	conn.SetPongHandler(func(string) error {
-		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	})
-	pingTicker := time.NewTicker(30 * time.Second)
-	defer pingTicker.Stop()
-
 	logPath := h.AppPath + "/logs/proxy-access.log"
-	ctx := r.Context()
+	ctx := keepalive(r.Context(), conn)
 
 	initial, err := tailLogLines(logPath, tail)
 	if err != nil {
@@ -541,11 +539,6 @@ func (h *Handler) apiGlobalProxyLog(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-pingTicker.C:
-			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				// client gone — exit cleanly
-				return
-			}
 		case <-ticker.C:
 			for {
 				line, err := reader.ReadString('\n')
@@ -583,14 +576,8 @@ func (h *Handler) apiGlobalWAFLog(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	conn.SetPongHandler(func(string) error {
-		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	})
-	pingTicker := time.NewTicker(30 * time.Second)
-	defer pingTicker.Stop()
-
 	logPath := h.AppPath + "/logs/waf.log"
-	ctx := r.Context()
+	ctx := keepalive(r.Context(), conn)
 
 	initial, err := tailLogLines(logPath, tail)
 	if err != nil {
@@ -626,10 +613,6 @@ func (h *Handler) apiGlobalWAFLog(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-pingTicker.C:
-			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				return
-			}
 		case <-ticker.C:
 			for {
 				line, err := reader.ReadString('\n')
