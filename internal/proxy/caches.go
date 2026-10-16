@@ -6,18 +6,15 @@ package proxy
 
 import (
 	"crypto/tls"
-	"fmt"
-	"net/http"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"strings"
-	"time"
 )
 
-// WarmCaches warms all proxy caches and connections in the correct order.
+// WarmCaches warms all proxy caches and upstream TLS verdicts in the correct order.
 // Pass justTrustedProxies=true to only refresh the trusted proxy ranges —
 // used by StartTrustedProxyRefresher to avoid unnecessary full rewarming.
 func (p *Proxy) WarmCaches(justTrustedProxies bool) error {
@@ -80,7 +77,7 @@ func (p *Proxy) WarmCaches(justTrustedProxies bool) error {
 	p.warmBasicAuthCache()
 	p.warmTrustedProxies(cidrs)
 	p.warmTLSCache()
-	p.warmConnections()
+	p.warmUpstreamTLS()
 
 	// default return
 	return nil
@@ -162,8 +159,8 @@ func (p *Proxy) warmCache() error {
 	return nil
 }
 
-// WarmRPRoutes rebuilds only the domain→upstream cache and re-warms the
-// connections and TLS verdicts that depend on it. An RP route save changes
+// WarmRPRoutes rebuilds only the domain→upstream cache and re-probes the
+// TLS verdicts that depend on it.
 // nothing in the IP, UA, country, ASN, bypass, basicauth or redirect caches,
 // so a full WarmCaches re-reads seven tables and rebuilds every rule set for
 // a change that touches one.
@@ -172,7 +169,7 @@ func (p *Proxy) WarmRPRoutes() error {
 		return err
 	}
 	p.warmTLSCache()
-	p.warmConnections()
+	p.warmUpstreamTLS()
 	return nil
 }
 
@@ -200,82 +197,24 @@ func (p *Proxy) warmTLSCache() {
 	}()
 }
 
-// WarmConnections proactively establishes TCP connections to all registered
-// site backends so the first real visitor request never pays the dial cost.
-// Container sites are warmed via p.transport; RP upstream URLs via p.rpTransport.
-// Runs in a goroutine — failures are non-fatal (pod may not be running yet).
-func (p *Proxy) warmConnections() {
-
-	// warm the connections in a goroutine so it does not block startup
+// warmUpstreamTLS records a certificate verdict for every reverse proxy
+// upstream so serving can verify TLS opportunistically. It only completes a
+// TLS handshake — no request reaches the upstream or any container site.
+// Runs in a goroutine — failures are non-fatal.
+func (p *Proxy) warmUpstreamTLS() {
 	go func() {
-
-		// load the current domain cache snapshot
 		ptr := p.cache.Load()
 		if ptr == nil {
 			return
 		}
-
-		// short timeout — we only want to establish the connection, not wait
-		// for a full response; failures are expected for stopped pods
-		client := &http.Client{
-			Transport: p.transport,
-			Timeout:   5 * time.Second,
-		}
-		rpClient := &http.Client{
-			Transport: p.rpTransport,
-			Timeout:   5 * time.Second,
-		}
-
-		// track which ports have already been warmed to avoid duplicate dials
-		seenPorts := make(map[int]struct{})
-
-		// iterate over the cache entries and warm each unique port
 		for _, entry := range *ptr {
-
-			// warm RP upstream pool connections via rpTransport
-			if entry.pool != nil {
-				targets := entry.pool.Targets()
-				for _, target := range targets {
-
-					// probe the cert verdict so serving can opportunistically verify TLS
-					p.probeUpstreamTLS(target)
-
-					// setup the url
-					url := target.Scheme + "://" + target.Host + "/"
-					resp, err := rpClient.Head(url)
-					if err != nil {
-						logger.Debug("WarmConnections: RP upstream %s: %v", url, err)
-						continue
-					}
-					resp.Body.Close()
-					logger.Debug("WarmConnections: warmed RP upstream %s", url)
-				}
-			}
-
-			// skip zero-port entries with no pool, and skip the admin port
-			if entry.port == 0 || entry.port == p.adminPort {
+			if entry.pool == nil {
 				continue
 			}
-
-			// deduplicate — multiple domains may share the same container port
-			if _, seen := seenPorts[entry.port]; seen {
-				continue
+			for _, target := range entry.pool.Targets() {
+				p.probeUpstreamTLS(target)
 			}
-			seenPorts[entry.port] = struct{}{}
-
-			// warm the container site backend via transport
-			url := fmt.Sprintf("http://%s:%d/", p.hostGateway, entry.port)
-			resp, err := client.Head(url)
-			if err != nil {
-				logger.Debug("WarmConnections: port %d: %v", entry.port, err)
-				continue
-			}
-			resp.Body.Close()
-			logger.Debug("WarmConnections: warmed port %d", entry.port)
 		}
-
-		// log the success
-		logger.Debug("WarmConnections: completed warmup for %d unique ports", len(seenPorts))
 	}()
 }
 
