@@ -371,9 +371,6 @@ func (s *Server) startupRestore() {
 			continue
 		}
 
-		// warm the caches
-		go s.proxy.WarmCaches(false)
-
 		logger.Debug("startupRestore: pod for site %s restored successfully", site.Name)
 	}
 }

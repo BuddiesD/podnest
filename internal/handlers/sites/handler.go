@@ -820,7 +820,6 @@ func (h *Handler) apiSiteStart(w http.ResponseWriter, r *http.Request) {
 		apiutil.ErrorMsg(w, http.StatusInternalServerError, "pod failed to reach running state")
 		return
 	}
-	go h.Proxy.WarmCaches(false)
 
 	// run mariadb-upgrade if the DB version has changed
 	go h.maybeUpgradeMariaDB(context.Background(), site)
@@ -879,8 +878,6 @@ func (h *Handler) apiSiteRestart(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusInternalServerError, err)
 		return
 	}
-
-	go h.Proxy.WarmCaches(false)
 
 	// update the site status to running in the database and return a JSON response indicating the running status
 	_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusRunning)
