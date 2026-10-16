@@ -258,28 +258,36 @@ function wireHealthBadges(root, id) {
     const proto = location.protocol === "https:" ? "wss" : "ws";
     _healthWS = new WebSocket(`${proto}://${location.host}/api/sites/${id}/health/stream`);
 
+    // last pushed states — the server only pushes on change, so a restart that
+    // ends where it started never sends a frame to clear the restarting color
+    let last = [];
+
+    const paint = () => {
+        container.innerHTML = renderHealthBadges(last);
+        // wire click-to-restart on freshly rendered badges
+        container.querySelectorAll(".kp-health-badge").forEach(badge => {
+            badge.addEventListener("click", async () => {
+                // immediately signal restarting so users don't double-click
+                badge.style.color = healthColor("restarting");
+
+                const cname = badge.dataset.container;
+                const role = cname.split("-").pop();
+                try {
+                    await api.post(`/sites/${id}/containers/${role}/restart`);
+                    toast.success(`${containerLabel(cname)} restarted`);
+                } catch (err) {
+                    toast.error(err.message);
+                }
+                // repaint from the last pushed states so the badge reflects true state
+                paint();
+            });
+        });
+    };
+
     _healthWS.onmessage = (e) => {
         try {
-            const data = JSON.parse(e.data);
-            container.innerHTML = renderHealthBadges(data);
-            // wire click-to-restart on freshly rendered badges
-            container.querySelectorAll(".kp-health-badge").forEach(badge => {
-                badge.addEventListener("click", async () => {
-                    // immediately signal restarting so users don't double-click
-                    badge.style.color = healthColor("restarting");
-
-                    const cname = badge.dataset.container;
-                    const role = cname.split("-").pop();
-                    try {
-                        await api.post(`/sites/${id}/containers/${role}/restart`);
-                        toast.success(`${containerLabel(cname)} restarted`);
-                    } catch (err) {
-                        // revert color on failure so the badge reflects true state
-                        badge.style.color = healthColor("none");
-                        toast.error(err.message);
-                    }
-                });
-            });
+            last = JSON.parse(e.data);
+            paint();
         } catch (_) { /* ignore malformed frames */ }
     };
 
