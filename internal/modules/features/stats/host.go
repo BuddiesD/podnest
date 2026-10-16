@@ -6,16 +6,24 @@ package stats
 
 import (
 	"bufio"
+	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"podnest/internal/logger"
+
+	"github.com/gorilla/websocket"
 )
+
+// hostStatsInterval is how often the shared host sampler takes a reading.
+const hostStatsInterval = 2 * time.Second
 
 // hostStatsResponse is the dashboard host-usage WebSocket push payload.
 type hostStatsResponse struct {
@@ -28,10 +36,126 @@ type hostStatsResponse struct {
 	ProcsTotal   int     `json:"procs_total"`
 }
 
-// apiHostStats upgrades to WebSocket and pushes host CPU, memory, disk, and
-// process counts every 2s. /proc/stat, /proc/meminfo, and /proc/loadavg report
+// hostStatsHub runs one host sampler for every dashboard viewer, started by
+// the first viewer and stopped after the last one leaves.
+type hostStatsHub struct {
+	mu     sync.Mutex
+	cancel context.CancelFunc
+	subs   map[chan []byte]struct{}
+}
+
+// hostHub is the package-level sampler shared by all host stats WebSockets.
+var hostHub = &hostStatsHub{subs: make(map[chan []byte]struct{})}
+
+// subscribe registers a viewer for host stats, starting the sampler on the
+// first viewer; the returned func unsubscribes and stops it after the last.
+func (hub *hostStatsHub) subscribe(appPath string) (<-chan []byte, func()) {
+	ch := make(chan []byte, 1)
+
+	hub.mu.Lock()
+	if hub.cancel == nil {
+		ctx, cancel := context.WithCancel(context.Background())
+		hub.cancel = cancel
+		go hub.run(ctx, appPath)
+	}
+	hub.subs[ch] = struct{}{}
+	hub.mu.Unlock()
+
+	return ch, func() {
+		hub.mu.Lock()
+		defer hub.mu.Unlock()
+		delete(hub.subs, ch)
+		if len(hub.subs) == 0 && hub.cancel != nil {
+			hub.cancel()
+			hub.cancel = nil
+		}
+	}
+}
+
+// run samples host CPU, memory, disk, and process counts every interval and
+// broadcasts each reading. /proc/stat, /proc/meminfo, and /proc/loadavg report
 // host-wide figures even from inside the container's own PID namespace; disk
 // is the filesystem holding the app path.
+func (hub *hostStatsHub) run(ctx context.Context, appPath string) {
+
+	// CPU percent is a delta between samples, so take the baseline up front
+	prevTotal, prevIdle, err := readCPUTimes()
+	if err != nil {
+		logger.Debug("stats: host cpu baseline: %v", err)
+	}
+
+	ticker := time.NewTicker(hostStatsInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+
+		var resp hostStatsResponse
+
+		if total, idle, err := readCPUTimes(); err != nil {
+			logger.Debug("stats: host cpu: %v", err)
+		} else {
+			if dt := total - prevTotal; prevTotal > 0 && dt > 0 {
+				resp.CPUPercent = float64(dt-(idle-prevIdle)) / float64(dt) * 100
+			}
+			prevTotal, prevIdle = total, idle
+		}
+
+		if used, total, err := readHostMem(); err != nil {
+			logger.Debug("stats: host mem: %v", err)
+		} else {
+			resp.MemUsed, resp.MemTotal = used, total
+		}
+
+		var st syscall.Statfs_t
+		if err := syscall.Statfs(appPath, &st); err != nil {
+			logger.Debug("stats: host disk: %v", err)
+		} else {
+			bs := int64(st.Bsize)
+			resp.DiskTotal = int64(st.Blocks) * bs
+			resp.DiskUsed = int64(st.Blocks-st.Bfree) * bs
+		}
+
+		if running, total, err := readProcCounts(); err != nil {
+			logger.Debug("stats: host procs: %v", err)
+		} else {
+			resp.ProcsRunning, resp.ProcsTotal = running, total
+		}
+
+		payload, err := json.Marshal(resp)
+		if err != nil {
+			logger.Error("stats: host stats marshal failed: %v", err)
+			continue
+		}
+		hub.broadcast(ctx, payload)
+	}
+}
+
+// broadcast hands payload to every viewer, replacing any reading a slow viewer
+// has not taken yet so a stalled tab never blocks the sampler.
+func (hub *hostStatsHub) broadcast(ctx context.Context, payload []byte) {
+	hub.mu.Lock()
+	defer hub.mu.Unlock()
+
+	// a stopped sampler must not feed the viewers of its replacement
+	if ctx.Err() != nil {
+		return
+	}
+	for ch := range hub.subs {
+		select {
+		case <-ch:
+		default:
+		}
+		ch <- payload
+	}
+}
+
+// apiHostStats upgrades to WebSocket and relays the shared host sampler's
+// CPU, memory, disk, and process counts every 2s.
 func (h *Handler) apiHostStats(w http.ResponseWriter, r *http.Request) {
 	conn, err := wsUpgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -40,54 +164,39 @@ func (h *Handler) apiHostStats(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// CPU percent is a delta between samples, so take the baseline up front
-	prevTotal, prevIdle, err := readCPUTimes()
-	if err != nil {
-		logger.Debug("stats: host cpu baseline: %v", err)
-	}
+	// the pong handler only runs inside a read, and a hijacked connection's
+	// request context is not cancelled when the client goes away — this loop
+	// does both, closing done on disconnect or a missed pong deadline
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	})
+	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			if _, _, err := conn.NextReader(); err != nil {
+				return
+			}
+		}
+	}()
 
-	ctx := r.Context()
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
+	pingTicker := time.NewTicker(30 * time.Second)
+	defer pingTicker.Stop()
+
+	feed, unsubscribe := hostHub.subscribe(h.AppPath)
+	defer unsubscribe()
 
 	for {
 		select {
-		case <-ctx.Done():
+		case <-done:
 			return
-		case <-ticker.C:
-			var resp hostStatsResponse
-
-			if total, idle, err := readCPUTimes(); err != nil {
-				logger.Debug("stats: host cpu: %v", err)
-			} else {
-				if dt := total - prevTotal; prevTotal > 0 && dt > 0 {
-					resp.CPUPercent = float64(dt-(idle-prevIdle)) / float64(dt) * 100
-				}
-				prevTotal, prevIdle = total, idle
+		case <-pingTicker.C:
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
 			}
-
-			if used, total, err := readHostMem(); err != nil {
-				logger.Debug("stats: host mem: %v", err)
-			} else {
-				resp.MemUsed, resp.MemTotal = used, total
-			}
-
-			var st syscall.Statfs_t
-			if err := syscall.Statfs(h.AppPath, &st); err != nil {
-				logger.Debug("stats: host disk: %v", err)
-			} else {
-				bs := int64(st.Bsize)
-				resp.DiskTotal = int64(st.Blocks) * bs
-				resp.DiskUsed = int64(st.Blocks-st.Bfree) * bs
-			}
-
-			if running, total, err := readProcCounts(); err != nil {
-				logger.Debug("stats: host procs: %v", err)
-			} else {
-				resp.ProcsRunning, resp.ProcsTotal = running, total
-			}
-
-			if err := conn.WriteJSON(resp); err != nil {
+		case payload := <-feed:
+			if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
 				logger.Debug("stats: ws write failed for host stats: %v", err)
 				return
 			}
