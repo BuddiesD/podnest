@@ -214,12 +214,19 @@ function containerLabel(name) {
     return labels[role] ?? role;
 }
 
-// healthColor maps a Podman health status to a CSS color variable
+// healthColor maps a Podman container state to a CSS color variable
 function healthColor(status) {
     switch (status) {
-        case "healthy": return "var(--kp-success)";
-        case "unhealthy": return "var(--kp-danger)";
-        case "starting": return "var(--kp-warning)";
+        case "running": return "var(--kp-success)";
+        case "exited":
+        case "stopped":
+        case "dead": return "var(--kp-danger)";
+        case "created":
+        case "configured":
+        case "initialized":
+        case "paused":
+        case "stopping":
+        case "restarting": return "var(--kp-warning)";
         default: return "var(--kp-text-dim)";
     }
 }
@@ -259,7 +266,7 @@ function wireHealthBadges(root, id) {
             container.querySelectorAll(".kp-health-badge").forEach(badge => {
                 badge.addEventListener("click", async () => {
                     // immediately signal restarting so users don't double-click
-                    badge.style.color = healthColor("starting");
+                    badge.style.color = healthColor("restarting");
 
                     const cname = badge.dataset.container;
                     const role = cname.split("-").pop();

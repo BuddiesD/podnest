@@ -26,14 +26,18 @@ type statsCache struct {
 	health map[string]PodHealth              // keyed by pod name
 	podOf  map[string]string                 // container name → pod name
 	stats  map[string][]podman.ContainerStat // keyed by pod name
+
+	// changed is closed and replaced on every state update, waking streams
+	changed chan struct{}
 }
 
 // newStatsCache returns an initialised statsCache.
 func newStatsCache() *statsCache {
 	return &statsCache{
-		health: make(map[string]PodHealth),
-		podOf:  make(map[string]string),
-		stats:  make(map[string][]podman.ContainerStat),
+		health:  make(map[string]PodHealth),
+		podOf:   make(map[string]string),
+		stats:   make(map[string][]podman.ContainerStat),
+		changed: make(chan struct{}),
 	}
 }
 
@@ -53,6 +57,8 @@ func (c *statsCache) setStates(states map[string][]models.ContainerHealth) {
 	c.mu.Lock()
 	c.health = health
 	c.podOf = podOf
+	close(c.changed)
+	c.changed = make(chan struct{})
 	c.mu.Unlock()
 }
 
@@ -99,14 +105,11 @@ func (c *statsCache) allStats() map[string][]podman.ContainerStat {
 	return out
 }
 
-// ContainerHealthFor returns the container health slice for a pod.
+// ContainerHealthWatch returns a pod's container states along with a channel
+// that is closed the next time the states are replaced.
 // Used to satisfy the health.HealthCache interface in the handler package.
-func (c *statsCache) ContainerHealthFor(podName string) ([]models.ContainerHealth, bool) {
+func (c *statsCache) ContainerHealthWatch(podName string) ([]models.ContainerHealth, <-chan struct{}) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	h, ok := c.health[podName]
-	if !ok {
-		return nil, false
-	}
-	return h.Containers, ok
+	return c.health[podName].Containers, c.changed
 }

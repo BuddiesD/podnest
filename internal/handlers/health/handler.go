@@ -5,6 +5,7 @@
 package health
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -22,7 +23,7 @@ import (
 
 // HealthCache is the subset of the server stats cache consumed by this handler.
 type HealthCache interface {
-	ContainerHealthFor(podName string) ([]models.ContainerHealth, bool)
+	ContainerHealthWatch(podName string) ([]models.ContainerHealth, <-chan struct{})
 }
 
 // ContainerRestarter is the subset of podman.Client consumed by this handler.
@@ -81,20 +82,29 @@ func (h *Handler) apiHealthStream(w http.ResponseWriter, r *http.Request) {
 	pingTicker := time.NewTicker(30 * time.Second)
 	defer pingTicker.Stop()
 
-	// push health state immediately then every 2 seconds
-	streamTicker := time.NewTicker(2 * time.Second)
-	defer streamTicker.Stop()
-
 	podName := podman.PodName(site.Name)
 	ctx := r.Context()
 
+	var (
+		last    []byte
+		changed <-chan struct{}
+	)
+
 	send := func() bool {
-		containers, _ := h.Cache.ContainerHealthFor(podName)
+		var containers []models.ContainerHealth
+		containers, changed = h.Cache.ContainerHealthWatch(podName)
 		payload, err := json.Marshal(containers)
 		if err != nil {
 			logger.Error("apiHealthStream: marshal failed: %v", err)
 			return true
 		}
+
+		// every reconcile swaps the whole cache — only push when this pod changed
+		if bytes.Equal(payload, last) {
+			return true
+		}
+		last = payload
+
 		if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
 			logger.Debug("apiHealthStream: write failed for site %d: %v", site.ID, err)
 			return false
@@ -115,7 +125,7 @@ func (h *Handler) apiHealthStream(w http.ResponseWriter, r *http.Request) {
 			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
-		case <-streamTicker.C:
+		case <-changed:
 			if !send() {
 				return
 			}
