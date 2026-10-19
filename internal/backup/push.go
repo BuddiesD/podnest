@@ -234,6 +234,12 @@ func (m *Manager) pushSearchReplace(ctx context.Context, src, dst *models.Site, 
 	return nil
 }
 
+// CloneSearchReplace repoints a freshly cloned WordPress database from the
+// source's domain to the clone's own primary domain.
+func (m *Manager) CloneSearchReplace(ctx context.Context, src, clone *models.Site) error {
+	return m.pushSearchReplace(ctx, src, clone, filepath.Join(m.appPath, "sites", clone.Name))
+}
+
 // dumpDB writes the site's database through mysqldump (or mariadb-dump) in its
 // DB container into w.
 func (m *Manager) dumpDB(ctx context.Context, site *models.Site, siteDir string, w io.Writer) error {

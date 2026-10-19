@@ -80,7 +80,7 @@ func (h *Handler) apiAddDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	normalized, err := normalizeDomain(req.Domain)
+	normalized, err := NormalizeDomain(req.Domain)
 	if err != nil {
 		logger.Error("invalid domain '%s' for site %d: %v", req.Domain, site.ID, err)
 		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid domain: "+req.Domain)
@@ -178,10 +178,10 @@ func (h *Handler) apiDeleteDomain(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// normalizeDomain lowercases and trims a requested domain, then validates it as
+// NormalizeDomain lowercases and trims a requested domain, then validates it as
 // a routable hostname. Wildcards are rejected — the router matches exact hosts
 // and a wildcard entry would issue certs for names the requester may not own.
-func normalizeDomain(domain string) (string, error) {
+func NormalizeDomain(domain string) (string, error) {
 
 	// normalize case, strip surrounding whitespace and any trailing root dot
 	clean := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(domain)), ".")
@@ -189,7 +189,7 @@ func normalizeDomain(domain string) (string, error) {
 	// reject rather than mangle — an unroutable entry still triggers ACME
 	// issuance and still consumes the one-site-per-domain slot
 	if len(clean) > 253 || !domainValid.MatchString(clean) {
-		return "", fmt.Errorf("normalizeDomain: invalid domain %q", domain)
+		return "", fmt.Errorf("NormalizeDomain: invalid domain %q", domain)
 	}
 
 	// return the safe domain

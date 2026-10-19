@@ -26,6 +26,7 @@ import (
 	"podnest/internal/config"
 	"podnest/internal/db"
 	"podnest/internal/fileutil"
+	"podnest/internal/handlers/domains"
 	"podnest/internal/logger"
 	"podnest/internal/models"
 	"podnest/internal/modules"
@@ -1392,9 +1393,10 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// define a struct to capture the expected JSON payload for the clone request, specifically the desired name for the cloned site
+	// define a struct to capture the expected JSON payload for the clone request: the clone's name and its domain
 	var req struct {
-		Name string `json:"name"`
+		Name   string `json:"name"`
+		Domain string `json:"domain"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, err)
@@ -1409,6 +1411,36 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Name = name
+
+	// the clone is served on its own domain, validated the same way a domain added to any site is
+	domain, err := domains.NormalizeDomain(req.Domain)
+	if err != nil {
+		logger.Error("apiSiteClone: invalid clone domain: %v", err)
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid domain: "+req.Domain)
+		return
+	}
+
+	// the panel's own hostname must not be claimable by a site
+	adminDomain, err := db.GetSetting(h.DB, "admin_domain")
+	if err != nil {
+		logger.Error("apiSiteClone: failed to read admin_domain: %v", err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	if ad := strings.ToLower(strings.TrimSpace(adminDomain)); ad != "" && domain == ad {
+		apiutil.ErrorMsg(w, http.StatusConflict, "domain is reserved for the panel")
+		return
+	}
+	exists, err := db.DomainExists(h.DB, domain)
+	if err != nil {
+		logger.Error("apiSiteClone: failed to check domain '%s': %v", domain, err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	if exists {
+		apiutil.ErrorMsg(w, http.StatusConflict, "domain already registered")
+		return
+	}
 
 	// check if a site with the requested clone name already exists in the database, returning a conflict response if it does
 	existing, err := db.GetSiteByName(h.DB, req.Name)
@@ -1646,6 +1678,17 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// register the clone's domain last so no earlier failure leaves it cached in the proxy
+	if err := db.CreateDomain(h.DB, &models.Domain{SiteID: clone.ID, Domain: domain}); err != nil {
+		logger.Error("apiSiteClone: failed to save domain '%s' for clone %s: %v", domain, clone.Name, err)
+		_ = db.DeleteSite(h.DB, clone.ID)
+		_ = os.RemoveAll(cloneSiteDir)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	h.Proxy.AddDomain(domain, clone.Port, clone.ID, clone.Name)
+	h.Proxy.ObtainCert(domain)
+
 	// respond immediately — pod creation and DB clone run in the background
 	apiutil.JSON(w, http.StatusAccepted, map[string]any{"id": clone.ID, "name": clone.Name})
 
@@ -1670,6 +1713,8 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 			_ = h.Podman.StopPod(rbCtx, podman.PodName(clone.Name))
 			_ = h.Podman.RemoveSitePod(rbCtx, clone.Name)
 			rbCancel()
+			h.Proxy.RemoveDomains([]string{domain})
+			h.Proxy.ForgetSite(clone.ID, clone.Port)
 			_ = db.DeleteSite(h.DB, clone.ID)
 			_ = os.RemoveAll(cloneSiteDir)
 			return
@@ -1679,6 +1724,12 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 		if modules.TypeModule(src.SiteType).HasDatabase() {
 			if err := h.cloneDatabase(podCtx, src, clone); err != nil {
 				logger.Error("apiSiteClone: DB clone failed for %s → %s: %v", src.Name, clone.Name, err)
+			} else if clone.SiteType == models.SiteTypeWordPress {
+
+				// the copied DB still points at the source's domain
+				if err := h.Backup.CloneSearchReplace(podCtx, src, clone); err != nil {
+					logger.Error("apiSiteClone: search-replace failed for %s → %s: %v", src.Name, clone.Name, err)
+				}
 			}
 		}
 

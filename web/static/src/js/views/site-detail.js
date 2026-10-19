@@ -477,13 +477,13 @@ export async function viewSiteDetail(root, { id, tab }) {
     });
 
     document.getElementById("sd-clone")?.addEventListener("click", async () => {
-        const name = await showCloneModal(site.Name);
-        if (!name) return;
+        const clone = await showCloneModal(site.Name);
+        if (!clone) return;
         showProgressModal("Cloning Site", "Copying files and database — this may take a few minutes...");
         try {
-            await api.post(`/sites/${id}/clone`, { name }, 600000);
+            await api.post(`/sites/${id}/clone`, clone, 600000);
             hideProgressModal();
-            toast.success(`Site cloned as '${name}'`);
+            toast.success(`Site cloned as '${clone.name}'`);
             router.go("sites");
         } catch (e) {
             hideProgressModal();

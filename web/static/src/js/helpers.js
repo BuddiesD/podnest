@@ -117,8 +117,8 @@ export function hideProgressModal() {
     if (el) { UIkit.modal(el).hide(); setTimeout(() => el.remove(), 300); }
 }
 
-// showCloneModal prompts for a clone name and resolves with the entered value,
-// or null if the user cancelled
+// showCloneModal prompts for a clone name and domain and resolves with
+// { name, domain }, or null if the user cancelled
 export function showCloneModal(sourceName) {
     return new Promise((resolve) => {
         const id = "kp-clone-modal";
@@ -127,11 +127,13 @@ export function showCloneModal(sourceName) {
                 <div class="uk-modal-dialog kp-modal uk-modal-body" style="max-width:420px">
                     <h3 class="uk-modal-title">Clone Site</h3>
                     <p class="kp-muted uk-text-small uk-margin-small-bottom">
-                        Enter a name for the clone of <strong>${sourceName}</strong>.
-                        Files, database, and configuration will be copied — domains will not.
+                        Enter a name and domain for the clone of <strong>${sourceName}</strong>.
+                        Files, database, and configuration will be copied — the clone is served on its own domain.
                     </p>
                     <input id="kp-clone-name" class="uk-input kp-input" type="text"
                         placeholder="clone-name" autocomplete="off">
+                    <input id="kp-clone-domain" class="uk-input kp-input uk-margin-small-top" type="text"
+                        placeholder="staging.example.com" autocomplete="off">
                     <div class="uk-flex uk-flex-right uk-margin-top" style="gap:8px">
                         <button class="uk-button kp-btn-ghost uk-modal-close" id="kp-clone-cancel">Cancel</button>
                         <button class="uk-button kp-btn-primary" id="kp-clone-ok">
@@ -144,6 +146,7 @@ export function showCloneModal(sourceName) {
         document.body.insertAdjacentHTML("beforeend", html);
         const modal = UIkit.modal(`#${id}`);
         const input = document.getElementById("kp-clone-name");
+        const domainInput = document.getElementById("kp-clone-domain");
         const okBtn = document.getElementById("kp-clone-ok");
         const cancel = document.getElementById("kp-clone-cancel");
 
@@ -153,7 +156,14 @@ export function showCloneModal(sourceName) {
             resolve(val);
         };
 
-        okBtn.addEventListener("click", () => cleanup(input.value.trim() || null), { once: true });
+        // both fields are required — keep the modal open on whichever is empty
+        okBtn.addEventListener("click", () => {
+            const name = input.value.trim();
+            const domain = domainInput.value.trim();
+            if (!name) { input.focus(); return; }
+            if (!domain) { domainInput.focus(); return; }
+            cleanup({ name, domain });
+        });
         cancel.addEventListener("click", () => cleanup(null), { once: true });
 
         // resolve null on backdrop/esc dismiss
@@ -164,10 +174,10 @@ export function showCloneModal(sourceName) {
         // focus the input after the modal animates in
         setTimeout(() => input.focus(), 150);
 
-        // allow submitting with Enter
-        input.addEventListener("keydown", (e) => {
+        // allow submitting with Enter from either field
+        [input, domainInput].forEach((el) => el.addEventListener("keydown", (e) => {
             if (e.key === "Enter") okBtn.click();
-        });
+        }));
     });
 }
 
