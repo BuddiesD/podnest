@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"podnest/internal/logger"
 	"podnest/internal/models"
@@ -79,5 +80,114 @@ func (m *Manager) DumpDB(ctx context.Context, site *models.Site, w io.Writer) er
 	}
 
 	logger.Debug("DumpDB: dump streamed for site %s", site.Name)
+	return nil
+}
+
+// IsSQLDumpName reports whether name has a supported SQL dump extension.
+func IsSQLDumpName(name string) bool {
+	return strings.HasSuffix(name, ".sql") || strings.HasSuffix(name, ".sql.gz")
+}
+
+// ListImportSQLFiles returns the filenames of any SQL dumps (.sql, .sql.gz) in
+// the site's SFTP import directory.
+func (m *Manager) ListImportSQLFiles(siteName string) ([]string, error) {
+	entries, err := os.ReadDir(m.importDir(siteName))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []string{}, nil
+		}
+		return nil, fmt.Errorf("ListImportSQLFiles: %w", err)
+	}
+
+	files := []string{}
+	for _, e := range entries {
+		// the SFTP user owns this dir, so only surface plain files — never
+		// symlinks, FIFOs or other special files
+		if !e.Type().IsRegular() {
+			continue
+		}
+		if IsSQLDumpName(e.Name()) {
+			files = append(files, e.Name())
+		}
+	}
+	return files, nil
+}
+
+// ImportSQL loads the .sql or .sql.gz dump at dumpPath into the site's
+// database, merging into the existing schema unless wipe is set. The site is
+// placed in maintenance mode for the duration, and on success the dump is
+// deleted when it lives in the site's own import directory.
+func (m *Manager) ImportSQL(ctx context.Context, site *models.Site, dumpPath string, wipe bool) (err error) {
+
+	// share the restore guard and status poll with archive imports
+	m.restoring.Store(site.ID, true)
+	defer m.restoring.Delete(site.ID)
+
+	// record the outcome for the status poll; deferred after the restoring
+	// flag so the error is stored before the site reports idle
+	m.importErrs.Delete(site.ID)
+	defer func() {
+		if err != nil {
+			m.importErrs.Store(site.ID, err.Error())
+		}
+	}()
+
+	// read DB credentials from the site's .env file
+	siteDir := filepath.Join(m.appPath, "sites", site.Name)
+	envPath := filepath.Join(siteDir, ".env")
+	dbName, err := readEnvValue(envPath, "DB_NAME")
+	if err != nil {
+		return fmt.Errorf("ImportSQL: DB_NAME: %w", err)
+	}
+	rootPass, err := readEnvValue(envPath, "DB_ROOT_PASS")
+	if err != nil {
+		return fmt.Errorf("ImportSQL: DB_ROOT_PASS: %w", err)
+	}
+
+	// the import dir is writable by the site's SFTP user, so the dump is opened
+	// without following links and must be a regular file
+	f, err := openArchive(dumpPath)
+	if err != nil {
+		return fmt.Errorf("ImportSQL: %w", err)
+	}
+	defer f.Close()
+
+	var src io.Reader = f
+	if strings.HasSuffix(dumpPath, ".gz") {
+		gz, err := gzip.NewReader(f)
+		if err != nil {
+			return fmt.Errorf("ImportSQL: gzip: %w", err)
+		}
+		defer gz.Close()
+		src = gz
+	}
+
+	// enable maintenance mode before touching the database
+	if err := m.enableMaintenance(ctx, site, siteDir); err != nil {
+		return fmt.Errorf("ImportSQL: enable maintenance: %w", err)
+	}
+	defer func() {
+		if err := m.disableMaintenance(ctx, site, siteDir); err != nil {
+			logger.Error("ImportSQL: disable maintenance for site %s: %v", site.Name, err)
+		}
+	}()
+
+	if wipe {
+		if err := m.clearDatabase(ctx, site, dbName, rootPass); err != nil {
+			return fmt.Errorf("ImportSQL: %w", err)
+		}
+	}
+	if err := m.loadDBDump(ctx, site, src, dbName, rootPass); err != nil {
+		return fmt.Errorf("ImportSQL: %w", err)
+	}
+
+	// remove the dump now that the import succeeded
+	if filepath.Dir(dumpPath) == m.importDir(site.Name) {
+		if err := os.Remove(dumpPath); err != nil {
+			logger.Warn("ImportSQL: remove dump %s: %v", dumpPath, err)
+		}
+	}
+
+	logger.Debug("ImportSQL: imported %s into site %s (wipe=%v)", filepath.Base(dumpPath), site.Name, wipe)
 	return nil
 }

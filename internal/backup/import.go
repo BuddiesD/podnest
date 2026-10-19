@@ -579,8 +579,8 @@ func (m *Manager) clearDatabase(ctx context.Context, site *models.Site, dbName, 
 	return nil
 }
 
-// importDB pipes db_dump.sql into the target site's MariaDB container,
-// rewriting USE / CREATE DATABASE statements to match the target site name
+// importDB clears the target site's database, then loads db_dump.sql into it
+// with USE / CREATE DATABASE statements rewritten to match the target site name
 func (m *Manager) importDB(ctx context.Context, site *models.Site, dumpPath, siteDir string) error {
 	rootPass, err := readEnvValue(filepath.Join(siteDir, ".env"), "DB_ROOT_PASS")
 	if err != nil {
@@ -596,36 +596,62 @@ func (m *Manager) importDB(ctx context.Context, site *models.Site, dumpPath, sit
 		return err
 	}
 
+	f, err := os.Open(dumpPath)
+	if err != nil {
+		return fmt.Errorf("importDB: open dump: %w", err)
+	}
+	defer f.Close()
+
+	if err := m.loadDBDump(ctx, site, f, dbName, rootPass); err != nil {
+		return fmt.Errorf("importDB: %w", err)
+	}
+
+	logger.Debug("importDB: DB imported for site %s", site.Name)
+	return nil
+}
+
+// loadDBDump rewrites the dump read from src to target dbName and pipes it into
+// the site's MariaDB container. Existing tables are left in place; callers
+// clear the schema first when the load must not merge.
+func (m *Manager) loadDBDump(ctx context.Context, site *models.Site, src io.Reader, dbName, rootPass string) error {
+
+	// a compressed dump can expand far beyond its upload size, so the rewritten
+	// copy is charged against the free space on the temp filesystem
+	budget, err := newExtractBudget(os.TempDir())
+	if err != nil {
+		return fmt.Errorf("loadDBDump: %w", err)
+	}
+
 	// rewrite the dump to a temp file with corrected db references
 	rewritten, err := os.CreateTemp("", "podnest-import-db-*.sql")
 	if err != nil {
-		return fmt.Errorf("importDB: create temp: %w", err)
+		return fmt.Errorf("loadDBDump: create temp: %w", err)
 	}
 	defer os.Remove(rewritten.Name())
 
-	if err := rewriteDBDump(dumpPath, rewritten, dbName); err != nil {
+	if err := rewriteDBDump(src, budgetWriter{w: rewritten, b: budget}, dbName); err != nil {
 		rewritten.Close()
-		return fmt.Errorf("importDB: rewrite: %w", err)
+		return fmt.Errorf("loadDBDump: rewrite: %w", err)
 	}
 	rewritten.Close()
 
-	// get the databse container name
+	// get the database container name
 	dbContainer := podman.ContainerName(site.Name, "db")
 
 	// ensure no stale directory exists at the import path inside the container
 	cleanCmd := exec.CommandContext(ctx, "podman",
 		"exec", dbContainer, "rm", "-rf", "/tmp/podnest-import.sql",
 	)
-
-	// copy the rewritten dump into the container
 	cleanCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock)
 	_ = cleanCmd.Run()
+
+	// copy the rewritten dump into the container
 	cpCmd := exec.CommandContext(ctx, "podman",
 		"cp", rewritten.Name(), dbContainer+":/tmp/podnest-import.sql",
 	)
 	cpCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock)
 	if out, err := cpCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("importDB: podman cp: %w — %s", err, string(out))
+		return fmt.Errorf("loadDBDump: podman cp: %w — %s", err, string(out))
 	}
 
 	// run the import inside the container
@@ -642,21 +668,16 @@ func (m *Manager) importDB(ctx context.Context, site *models.Site, dumpPath, sit
 	var mysqlStderr bytes.Buffer
 	mysqlCmd.Stderr = &mysqlStderr
 	if err := mysqlCmd.Run(); err != nil {
-		return fmt.Errorf("importDB: mariadb: %w — %s", err, mysqlStderr.String())
+		return fmt.Errorf("loadDBDump: mariadb: %w — %s", err, mysqlStderr.String())
 	}
 
-	logger.Debug("importDB: DB imported for site %s", site.Name)
+	logger.Debug("loadDBDump: dump loaded into %s for site %s", dbName, site.Name)
 	return nil
 }
 
 // rewriteDBDump copies src to dst line by line, replacing USE / CREATE DATABASE
 // statements that reference any database name with the target database name
-func rewriteDBDump(srcPath string, dst *os.File, targetDB string) error {
-	f, err := os.Open(srcPath)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
+func rewriteDBDump(src io.Reader, dst io.Writer, targetDB string) error {
 
 	// patterns to match and rewrite — case-insensitive prefix checks
 	usePrefix := "use `"
@@ -667,7 +688,7 @@ func rewriteDBDump(srcPath string, dst *os.File, targetDB string) error {
 		return fmt.Errorf("rewriteDBDump: write USE: %w", err)
 	}
 
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(src)
 	// increase the buffer for very long lines (e.g. large INSERT rows)
 	scanner.Buffer(make([]byte, 4*1024*1024), 4*1024*1024)
 
