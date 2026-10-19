@@ -632,7 +632,10 @@ func (m *Manager) importDB(ctx context.Context, site *models.Site, dumpPath, sit
 	mysqlCmd := exec.CommandContext(ctx, "podman",
 		"exec", "-e", "MYSQL_PWD", dbContainer,
 		"sh", "-c",
-		fmt.Sprintf("mariadb -uroot %s < /tmp/podnest-import.sql && rm /tmp/podnest-import.sql", dbName),
+		// the schema name is a positional arg, never interpolated into the script
+		`mariadb -uroot "$1" < /tmp/podnest-import.sql && rm /tmp/podnest-import.sql`,
+		"sh",
+		dbName,
 	)
 	mysqlCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock, "MYSQL_PWD="+rootPass)
 
