@@ -13,6 +13,7 @@ import { loadBackupsPanel, renderBackupsTab, wireBackupsPanel } from './site-bac
 import { loadBasicAuthTab, renderBasicAuthTab, wireBasicAuthTab } from './site-basicauth.js';
 import { renderConfigTab, renderVarnishTab, wireConfigTabs } from './site-configs.js';
 import { loadCronsPanel, renderCronsTab, wireCronsPanel } from './site-crons.js';
+import { renderDBToolsTab, wireDBToolsTab } from './site-dbtools.js';
 import { loadFilesPanel, renderFilesTab, wireFilesTab } from './site-files.js';
 import { renderLogsTab, wireLogsTab } from './site-logs.js';
 import { loadAllDomainSSL, renderOverviewTab, wireDomainActions, wireOverviewTab } from './site-overview.js';
@@ -306,6 +307,7 @@ export async function viewSiteDetail(root, { id, tab }) {
     const showPHP = site.SiteType === 1 || site.SiteType === 2;
     const isRP = site.SiteType === 6;
     const showCrons = [1, 2, 4, 5].includes(site.SiteType);
+    const hasDB = [1, 2, 4, 5, 7].includes(site.SiteType);
 
     // reset the shared listener abort before the waf/routes wiring attaches
     if (_rpWireAbort) _rpWireAbort.abort();
@@ -391,6 +393,7 @@ export async function viewSiteDetail(root, { id, tab }) {
                     <div class="kp-pill-dropdown-section">Tools</div>
                     ${site.SiteType === 1 ? `<a href="#" data-switcher="${showPHP ? 11 : 10}"><span uk-icon="icon: file-text; ratio: 0.85"></span> WP-CLI</a>` : ""}
                     <a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 12 : 11) : (showPHP ? 11 : 10)}"><span uk-icon="icon: history; ratio: 0.85"></span> Backups</a>
+                    ${hasDB ? `<a href="#" data-switcher="database"><span uk-icon="icon: table; ratio: 0.85"></span> Database</a>` : ""}
                     ${showCrons ? `<a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 13 : 12) : (showPHP ? 12 : 11)}"><span uk-icon="icon: clock; ratio: 0.85"></span> Crons</a>` : ""}
                     <a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 14 : 13) : (showPHP ? 13 : 12)}"><span uk-icon="icon: forward; ratio: 0.85"></span> Redirects</a>
                     <a href="#" data-switcher="files"><span uk-icon="icon: folder; ratio: 0.85"></span> Files</a>
@@ -417,6 +420,7 @@ export async function viewSiteDetail(root, { id, tab }) {
             <li>${renderBackupsTab(id)}</li>
             ${showCrons ? `<li>${renderCronsTab(id)}</li>` : ""}
             <li>${renderRedirectsTab()}</li>
+            ${hasDB ? `<li>${renderDBToolsTab(id)}</li>` : ""}
             <li>${renderFilesTab(id)}</li>
         </ul>`}`;
 
@@ -508,6 +512,14 @@ export async function viewSiteDetail(root, { id, tab }) {
     if (_fmSwitcher && _fmLink) _fmLink.dataset.switcher = String(_fmSwitcher.children.length - 1);
     wireFilesTab(root, id);
     loadFilesPanel(id);
+
+    // resolve the Database dropdown index to its panel's position, then wire it
+    if (hasDB) {
+        const _dbLink = root.querySelector('a[data-switcher="database"]');
+        const _dbPanel = root.querySelector("#dbtools-panel");
+        if (_fmSwitcher && _dbLink && _dbPanel) _dbLink.dataset.switcher = String([..._fmSwitcher.children].findIndex(li => li.contains(_dbPanel)));
+        wireDBToolsTab(root, id);
+    }
 
     wireHealthBadges(root, id);
     wireStatsTab(root, id, site.SiteType);

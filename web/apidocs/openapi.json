@@ -34,6 +34,10 @@
       "description": "Per-site cron job CRUD, toggle, and run-now."
     },
     {
+      "name": "Database",
+      "description": "Per-site database dump, import, search-replace, and optimize/repair."
+    },
+    {
       "name": "Domains",
       "description": "Per-site domain attach/detach and listing."
     },
@@ -5281,6 +5285,98 @@
           },
           "description": "TODO: document request body."
         }
+      }
+    },
+    "/sites/{id}/db/dump": {
+      "get": {
+        "tags": [
+          "Database"
+        ],
+        "summary": "Download database dump",
+        "operationId": "get_sites_id_db_dump",
+        "responses": {
+          "200": {
+            "description": "Gzip-compressed SQL dump",
+            "content": {
+              "application/gzip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Dump failed before streaming began",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Site ID (or user ID under the Users tag).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "dl",
+            "in": "query",
+            "required": false,
+            "description": "Optional alphanumeric download correlation token (max 32); echoed back as a kp_dl_<token> cookie when streaming starts.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/sites/{id}/domains": {
