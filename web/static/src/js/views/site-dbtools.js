@@ -5,7 +5,7 @@
 "use strict";
 
 import { api } from '../api.js';
-import { confirm, escapeHtml, hideProgressModal, showProgressModal } from '../helpers.js';
+import { confirm, escapeHtml, fmtBytes, hideProgressModal, showProgressModal } from '../helpers.js';
 import { toast } from '../toast.js';
 
 // renderDBToolsTab returns the static HTML shell for the database tools tab
@@ -101,6 +101,29 @@ export function renderDBToolsTab(siteId, siteType) {
                     <div uk-spinner="ratio: 0.6" style="color:var(--kp-blue)"></div>
                 </div>
             </div>
+
+            <!-- optimize / repair card -->
+            <div class="kp-card uk-padding-small">
+                <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                    <h3 class="kp-view-title">Optimize &amp; Repair</h3>
+                    <div class="uk-flex" style="gap:6px">
+                        <button class="uk-button kp-btn-ghost kp-btn-sm" id="dbtools-tables-refresh" uk-tooltip="Refresh the Table List">
+                            <span uk-icon="refresh"></span>
+                        </button>
+                        <button class="uk-button kp-btn-primary kp-btn-sm dbtools-maintain-btn" data-action="optimize" uk-tooltip="Optimize the Selected Tables" disabled>
+                            <span uk-icon="bolt"></span>
+                        </button>
+                        <button class="uk-button kp-btn-secondary kp-btn-sm dbtools-maintain-btn" data-action="repair" uk-tooltip="Repair the Selected Tables" disabled>
+                            <span uk-icon="cog"></span>
+                        </button>
+                    </div>
+                </div>
+                <div id="dbtools-tables-wrap">
+                    <div uk-spinner="ratio: 0.8" style="color:var(--kp-blue)"></div>
+                </div>
+                <div id="dbtools-maintain-result"></div>
+            </div>
+
         </div>`;
 }
 
@@ -212,6 +235,19 @@ export function wireDBToolsTab(root, siteId) {
     root.querySelector("#dbtools-sr-preview")?.addEventListener("click", () => runSearchReplace(root, siteId, true));
     root.querySelector("#dbtools-sr-run")?.addEventListener("click", () => runSearchReplace(root, siteId, false));
 
+    // optimize / repair — select-all and row checkboxes (delegated)
+    root.querySelector("#dbtools-tables-wrap")?.addEventListener("change", (e) => {
+        if (e.target.id === "dbtools-tables-all") {
+            root.querySelectorAll(".dbtools-table-check").forEach(c => { c.checked = e.target.checked; });
+        }
+        syncTableSelection(root);
+    });
+    root.querySelectorAll(".dbtools-maintain-btn").forEach(btn => {
+        btn.addEventListener("click", () => runMaintenance(root, siteId, btn.dataset.action));
+    });
+    root.querySelector("#dbtools-tables-refresh")?.addEventListener("click", () => loadTables(root, siteId));
+    loadTables(root, siteId);
+
     // refresh the SFTP dump list
     root.querySelector("#dbtools-sftp-refresh")?.addEventListener("click", () => loadImportFiles(root, siteId));
     loadImportFiles(root, siteId);
@@ -319,4 +355,87 @@ async function runSearchReplace(root, siteId, dryRun) {
         hideProgressModal();
         toast.error(err.message);
     }
+}
+
+
+// loadTables fetches the site's tables and renders the selectable list
+async function loadTables(root, siteId) {
+    const wrap = root.querySelector("#dbtools-tables-wrap");
+    if (!wrap) return;
+    try {
+        const tables = await api.get(`/sites/${siteId}/db/tables`);
+        if (!tables || tables.length === 0) {
+            wrap.innerHTML = `<p class="kp-muted uk-text-small uk-margin-remove">No tables found.</p>`;
+            syncTableSelection(root);
+            return;
+        }
+        const rows = tables.map(t => `
+            <tr>
+                <td><input class="uk-checkbox dbtools-table-check" type="checkbox" value="${escapeHtml(t.name)}"></td>
+                <td class="kp-mono" style="font-size:0.8rem">${escapeHtml(t.name)}</td>
+                <td>${escapeHtml(t.engine || "—")}</td>
+                <td class="uk-visible@s">${Number(t.rows).toLocaleString()}</td>
+                <td>${fmtBytes(t.size)}</td>
+            </tr>`).join("");
+        wrap.innerHTML = `
+            <div class="uk-overflow-auto">
+            <table class="uk-table uk-table-small uk-table-divider uk-margin-remove">
+                <thead>
+                    <tr>
+                        <th class="uk-table-shrink">
+                            <input class="uk-checkbox" type="checkbox" id="dbtools-tables-all" uk-tooltip="Select All">
+                        </th>
+                        <th>Table</th>
+                        <th>Engine</th>
+                        <th class="uk-visible@s">Rows</th>
+                        <th>Size</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+            </div>`;
+    } catch (err) {
+        wrap.innerHTML = `<p class="kp-muted uk-text-small">Failed to list tables: ${escapeHtml(err.message)}</p>`;
+    }
+    syncTableSelection(root);
+}
+
+// syncTableSelection keeps the select-all box and action buttons in step with
+// the row checkboxes
+function syncTableSelection(root) {
+    const checks = [...root.querySelectorAll(".dbtools-table-check")];
+    const n = checks.filter(c => c.checked).length;
+    const all = root.querySelector("#dbtools-tables-all");
+    if (all) {
+        all.checked = n > 0 && n === checks.length;
+        all.indeterminate = n > 0 && n < checks.length;
+    }
+    root.querySelectorAll(".dbtools-maintain-btn").forEach(b => { b.disabled = n === 0; });
+}
+
+// runMaintenance optimizes or repairs the selected tables and shows the report
+async function runMaintenance(root, siteId, action) {
+    const tables = [...root.querySelectorAll(".dbtools-table-check:checked")].map(c => c.value);
+    if (tables.length === 0) return;
+    const label = action === "repair" ? "Repair" : "Optimize";
+
+    const ok = await confirm(
+        `${label} Tables`,
+        `${label} ${tables.length} table${tables.length === 1 ? "" : "s"}? Tables may be briefly locked while this runs.`
+    );
+    if (!ok) return;
+
+    showProgressModal(`${label} Running`, `Running ${action} on ${tables.length} table${tables.length === 1 ? "" : "s"} — this may take a while on large tables.`);
+
+    const result = root.querySelector("#dbtools-maintain-result");
+    try {
+        const res = await api.post(`/sites/${siteId}/db/tables/maintain`, { action, tables }, 1800000);
+        hideProgressModal();
+        if (result) result.innerHTML = `<pre class="kp-cron-output uk-margin-small-top">${escapeHtml(res?.output || "(no output)")}</pre>`;
+        toast.success(`${label} complete`);
+    } catch (err) {
+        hideProgressModal();
+        toast.error(err.message);
+    }
+    await loadTables(root, siteId);
 }

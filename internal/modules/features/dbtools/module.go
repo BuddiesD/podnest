@@ -74,6 +74,20 @@ func (m Module) RegisterRoutes(mux *http.ServeMux, resolve modules.SiteResolver)
 		}
 		m.apiSearchReplace(w, r, site)
 	})
+	mux.HandleFunc("GET /sites/{id}/db/tables", func(w http.ResponseWriter, r *http.Request) {
+		site, ok := resolve(w, r)
+		if !ok {
+			return
+		}
+		m.apiListTables(w, r, site)
+	})
+	mux.HandleFunc("POST /sites/{id}/db/tables/maintain", func(w http.ResponseWriter, r *http.Request) {
+		site, ok := resolve(w, r)
+		if !ok {
+			return
+		}
+		m.apiMaintainTables(w, r, site)
+	})
 }
 
 // OnSiteCreate is a no-op; the database tools hold no per-site state.

@@ -22,6 +22,17 @@ import (
 	"podnest/internal/models"
 )
 
+// downloadWriter holds back the attachment response headers until the first
+// write, so a dump that fails before producing output can still return a JSON
+// error instead of a zero-length 200 with a Content-Disposition attached.
+type downloadWriter struct {
+	w        http.ResponseWriter
+	filename string
+	token    string
+	secure   bool
+	ready    bool
+}
+
 // apiDumpDB streams a gzip-compressed dump of the site's database as a download.
 func (m Module) apiDumpDB(w http.ResponseWriter, r *http.Request, site *models.Site) {
 	if !m.AppliesTo(site.SiteType) {
@@ -264,15 +275,68 @@ func validateSearchReplace(search, replace string) string {
 	return ""
 }
 
-// downloadWriter holds back the attachment response headers until the first
-// write, so a dump that fails before producing output can still return a JSON
-// error instead of a zero-length 200 with a Content-Disposition attached.
-type downloadWriter struct {
-	w        http.ResponseWriter
-	filename string
-	token    string
-	secure   bool
-	ready    bool
+// apiListTables returns the base tables in the site's database for selection
+// in the optimize/repair list
+func (m Module) apiListTables(w http.ResponseWriter, r *http.Request, site *models.Site) {
+	if !m.AppliesTo(site.SiteType) {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "this site type has no database")
+		return
+	}
+	tables, err := m.Manager.ListTables(r.Context(), site)
+	if err != nil {
+		logger.Error("apiListTables: site %d: %v", site.ID, err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	logger.Debug("apiListTables: site %s — %d tables", site.Name, len(tables))
+	apiutil.JSON(w, http.StatusOK, tables)
+}
+
+// apiMaintainTables runs an optimize or repair over the selected tables and
+// returns the per-table report
+func (m Module) apiMaintainTables(w http.ResponseWriter, r *http.Request, site *models.Site) {
+	if !m.AppliesTo(site.SiteType) {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "this site type has no database")
+		return
+	}
+	if m.Manager.IsRestoring(site.ID) {
+		apiutil.ErrorMsg(w, http.StatusConflict, "an import or restore is running for this site")
+		return
+	}
+
+	var req struct {
+		Action string   `json:"action"`
+		Tables []string `json:"tables"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Error("apiMaintainTables: decode site %d: %v", site.ID, err)
+		apiutil.Error(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.Action != "optimize" && req.Action != "repair" {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "action must be optimize or repair")
+		return
+	}
+	if len(req.Tables) == 0 {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "select at least one table")
+		return
+	}
+	if len(req.Tables) > 10000 {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "too many tables selected")
+		return
+	}
+
+	// once started the tool runs to completion, so a dropped connection never
+	// leaves a table mid-rebuild
+	output, err := m.Manager.MaintainTables(context.WithoutCancel(r.Context()), site, req.Action, req.Tables)
+	if err != nil {
+		logger.Error("apiMaintainTables: site %d: %v", site.ID, err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	logger.Debug("apiMaintainTables: %s on %d tables for site %d", req.Action, len(req.Tables), site.ID)
+	apiutil.JSON(w, http.StatusOK, map[string]string{"output": output})
 }
 
 // Write emits the download response headers on first use.

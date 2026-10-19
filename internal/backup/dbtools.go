@@ -21,6 +21,14 @@ import (
 	"podnest/internal/podman"
 )
 
+// DBTable describes one base table in a site's database.
+type DBTable struct {
+	Name   string `json:"name"`
+	Engine string `json:"engine"`
+	Rows   int64  `json:"rows"`
+	Size   int64  `json:"size"`
+}
+
 // DumpDB streams a gzip-compressed dump of the site's database to w. Nothing
 // reaches w until the dump produces output, so a dump that fails to start
 // still leaves the caller free to send an error response.
@@ -233,4 +241,115 @@ func (m *Manager) SearchReplace(ctx context.Context, site *models.Site, search, 
 
 	logger.Debug("SearchReplace: site %s — %d replacements (dry_run=%v)", site.Name, count, dryRun)
 	return count, nil
+}
+
+// ListTables returns the base tables in the site's database with their engine,
+// estimated row count and on-disk size (data plus indexes).
+func (m *Manager) ListTables(ctx context.Context, site *models.Site) ([]DBTable, error) {
+	envPath := filepath.Join(m.appPath, "sites", site.Name, ".env")
+	dbName, err := readEnvValue(envPath, "DB_NAME")
+	if err != nil {
+		return nil, fmt.Errorf("ListTables: DB_NAME: %w", err)
+	}
+	rootPass, err := readEnvValue(envPath, "DB_ROOT_PASS")
+	if err != nil {
+		return nil, fmt.Errorf("ListTables: DB_ROOT_PASS: %w", err)
+	}
+
+	query := fmt.Sprintf(
+		"SELECT TABLE_NAME, IFNULL(ENGINE,''), IFNULL(TABLE_ROWS,0), IFNULL(DATA_LENGTH,0)+IFNULL(INDEX_LENGTH,0) "+
+			"FROM information_schema.TABLES WHERE TABLE_SCHEMA='%s' AND TABLE_TYPE='BASE TABLE' ORDER BY TABLE_NAME",
+		strings.ReplaceAll(dbName, "'", "''"),
+	)
+	cmd := exec.CommandContext(ctx, "podman",
+		"exec", "-e", "MYSQL_PWD", podman.ContainerName(site.Name, "db"),
+		"mariadb", "-uroot", "-N", "-B", "-e", query,
+	)
+	cmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock, "MYSQL_PWD="+rootPass)
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("ListTables: mariadb: %w — %s", err, stderr.String())
+	}
+
+	tables := []DBTable{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		f := strings.Split(line, "\t")
+		if len(f) < 4 {
+			continue
+		}
+		rows, _ := strconv.ParseInt(f[2], 10, 64)
+		size, _ := strconv.ParseInt(f[3], 10, 64)
+		tables = append(tables, DBTable{Name: f[0], Engine: f[1], Rows: rows, Size: size})
+	}
+	return tables, nil
+}
+
+// MaintainTables runs an optimize or repair over the named tables in the
+// site's database and returns the tool's per-table report. Every name must be
+// an existing base table, so nothing but real tables ever reaches the command.
+func (m *Manager) MaintainTables(ctx context.Context, site *models.Site, action string, tables []string) (string, error) {
+	if action != "optimize" && action != "repair" {
+		return "", fmt.Errorf("MaintainTables: unsupported action %q", action)
+	}
+
+	envPath := filepath.Join(m.appPath, "sites", site.Name, ".env")
+	dbName, err := readEnvValue(envPath, "DB_NAME")
+	if err != nil {
+		return "", fmt.Errorf("MaintainTables: DB_NAME: %w", err)
+	}
+	rootPass, err := readEnvValue(envPath, "DB_ROOT_PASS")
+	if err != nil {
+		return "", fmt.Errorf("MaintainTables: DB_ROOT_PASS: %w", err)
+	}
+
+	// resolve the requested names against the live table list
+	existing, err := m.ListTables(ctx, site)
+	if err != nil {
+		return "", fmt.Errorf("MaintainTables: %w", err)
+	}
+	known := make(map[string]bool, len(existing))
+	for _, t := range existing {
+		known[t.Name] = true
+	}
+	seen := make(map[string]bool, len(tables))
+	var names []string
+	for _, t := range tables {
+		if !known[t] {
+			return "", fmt.Errorf("MaintainTables: unknown table %q", t)
+		}
+		// a leading dash would be parsed as an option by the check tool
+		if strings.HasPrefix(t, "-") {
+			return "", fmt.Errorf("MaintainTables: unsupported table name %q", t)
+		}
+		if !seen[t] {
+			seen[t] = true
+			names = append(names, t)
+		}
+	}
+	if len(names) == 0 {
+		return "", fmt.Errorf("MaintainTables: no tables selected")
+	}
+
+	// the schema and table names are positional args, never interpolated into
+	// the script; newer images ship only mariadb-check, older only mysqlcheck
+	args := append([]string{
+		"exec", "-e", "MYSQL_PWD", podman.ContainerName(site.Name, "db"),
+		"sh", "-c",
+		`if command -v mariadb-check >/dev/null 2>&1; then exec mariadb-check -uroot "$@"; else exec mysqlcheck -uroot "$@"; fi`,
+		"sh",
+		"--" + action, dbName,
+	}, names...)
+	cmd := exec.CommandContext(ctx, "podman", args...)
+	cmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock, "MYSQL_PWD="+rootPass)
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("MaintainTables: %s: %w — %s", action, err, strings.TrimSpace(string(out)))
+	}
+
+	logger.Debug("MaintainTables: %s on %d tables for site %s", action, len(names), site.Name)
+	return strings.TrimSpace(string(out)), nil
 }
