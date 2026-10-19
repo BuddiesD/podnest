@@ -82,10 +82,12 @@ func (m *Manager) ensureRepo(ctx context.Context, site *models.Site) (*models.Ba
 		}
 
 		// create a new repo record with the generated password and local path
+		// local is on by default, matching the column default
 		repo = &models.BackupRepo{
 			SiteID:       site.ID,
 			RepoPassword: hex.EncodeToString(b),
 			LocalPath:    m.localRepoPath(site.Name),
+			LocalEnabled: true,
 		}
 		if err := db.UpsertBackupRepo(m.db, repo); err != nil {
 			return nil, err

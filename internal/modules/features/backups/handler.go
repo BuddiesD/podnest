@@ -32,7 +32,7 @@ func (m Module) apiGetBackupRepo(w http.ResponseWriter, r *http.Request, site *m
 		return
 	}
 	if repo == nil {
-		repo = &models.BackupRepo{SiteID: site.ID}
+		repo = &models.BackupRepo{SiteID: site.ID, LocalEnabled: true}
 	}
 	// never expose the raw repo password to the client
 	repo.RepoPassword = ""
