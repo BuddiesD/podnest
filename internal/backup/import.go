@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"podnest/internal/db"
 	"podnest/internal/logger"
@@ -809,6 +810,31 @@ func (m *Manager) ensureWPCLI(ctx context.Context, containerName string) error {
 		map[string]any{"Detach": false}, nil,
 	); err != nil {
 		return fmt.Errorf("ensureWPCLI: start install exec: %w", err)
+	}
+
+	// the start call can return before the download finishes, so poll until
+	// the install exec exits rather than racing the first wp-cli run
+	deadline := time.Now().Add(60 * time.Second)
+	var inspect struct {
+		ExitCode int  `json:"ExitCode"`
+		Running  bool `json:"Running"`
+	}
+	for time.Now().Before(deadline) {
+		time.Sleep(500 * time.Millisecond)
+		if err := m.podman.GetJSON(ctx,
+			"/v4.0.0/libpod/exec/"+installResp.ID+"/json", &inspect,
+		); err != nil {
+			return fmt.Errorf("ensureWPCLI: inspect install exec: %w", err)
+		}
+		if !inspect.Running {
+			break
+		}
+	}
+	if inspect.Running {
+		return fmt.Errorf("ensureWPCLI: wp-cli install timed out")
+	}
+	if inspect.ExitCode != 0 {
+		return fmt.Errorf("ensureWPCLI: wp-cli install exited %d", inspect.ExitCode)
 	}
 
 	logger.Debug("ensureWPCLI: wp-cli installed in %s", containerName)
