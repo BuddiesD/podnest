@@ -171,6 +171,13 @@ func (m Module) apiDeleteBackup(w http.ResponseWriter, r *http.Request, site *mo
 		apiutil.ErrorMsg(w, http.StatusForbidden, "backup does not belong to this site")
 		return
 	}
+
+	// claim the site up front so a clash is refused here rather than in the job
+	if err := m.Manager.BeginRestore(site.ID); err != nil {
+		apiutil.ErrorMsg(w, http.StatusConflict, err.Error())
+		return
+	}
+
 	if err := m.Manager.DeleteSnapshot(r.Context(), site, backup); err != nil {
 		logger.Error("apiDeleteBackup: delete snapshots for backup %d: %v", bid, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
@@ -370,6 +377,13 @@ func (m Module) apiImportUpload(w http.ResponseWriter, r *http.Request, site *mo
 	}
 	out.Close()
 
+	// claim the target up front so a clash is refused here rather than in the job
+	if err := m.Manager.BeginRestore(targetSite.ID); err != nil {
+		os.Remove(destPath)
+		apiutil.ErrorMsg(w, http.StatusConflict, err.Error())
+		return
+	}
+
 	// kick off the restore asynchronously
 	m.Manager.Go(func(ctx context.Context) {
 		if err := m.Manager.ImportRestore(ctx, targetSite, destPath); err != nil {
@@ -432,6 +446,12 @@ func (m Module) apiImportSFTP(w http.ResponseWriter, r *http.Request, site *mode
 			apiutil.ErrorMsg(w, http.StatusForbidden, "forbidden")
 			return
 		}
+	}
+
+	// claim the target up front so a clash is refused here rather than in the job
+	if err := m.Manager.BeginRestore(targetSite.ID); err != nil {
+		apiutil.ErrorMsg(w, http.StatusConflict, err.Error())
+		return
 	}
 
 	m.Manager.Go(func(ctx context.Context) {

@@ -114,6 +114,12 @@ func (m *Manager) Backup(ctx context.Context, site *models.Site, label string) (
 		return 0, err
 	}
 
+	// with no destination able to run there is nothing to snapshot into, and
+	// callers rely on a nil error meaning a rollback point now exists
+	if !repo.LocalEnabled && !(repo.S3Enabled && s3 != nil) {
+		return 0, fmt.Errorf("backup: no backup destination is enabled for site %s", site.Name)
+	}
+
 	// generate a unique tag to correlate the file and DB snapshots for this run
 	tagBytes := make([]byte, 8)
 	if _, err := rand.Read(tagBytes); err != nil {
@@ -352,8 +358,7 @@ func (m *Manager) backupDB(ctx context.Context, site *models.Site, repoPath stri
 // record. Nginx serves the maintenance page for the duration.
 func (m *Manager) Restore(ctx context.Context, site *models.Site, backup *models.Backup) error {
 
-	// if a restore is already in progress for this site, prevent starting another
-	m.restoring.Store(site.ID, true)
+	// the caller claimed the site through BeginRestore; release it on exit
 	defer m.restoring.Delete(site.ID)
 
 	// look up the repo for this site; we need the password and repo type to know

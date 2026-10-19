@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	_ "embed"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,6 +25,10 @@ import (
 
 //go:embed maintenance.html
 var maintenanceHTML []byte
+
+// ErrSiteBusy reports a restore or import refused because the site already has
+// a restore, import, backup or push running.
+var ErrSiteBusy = errors.New("a restore, import, backup or push is already running on this site")
 
 // constants for restic binary path and maintenance mode file names
 const (
@@ -125,6 +130,23 @@ func (m *Manager) BackupJobStatus(siteID int64) (active bool, errMsg string) {
 	}
 	j := v.(backupJob)
 	return j.active, j.err
+}
+
+// BeginRestore claims the site for a restore or import, failing while another
+// job holds it. Restore and ImportRestore release the claim when they return.
+func (m *Manager) BeginRestore(siteID int64) error {
+	if active, _ := m.BackupJobStatus(siteID); active {
+		return ErrSiteBusy
+	}
+	if active, _ := m.PushJobStatus(siteID); active {
+		return ErrSiteBusy
+	}
+
+	// LoadOrStore makes the claim atomic against a concurrent restore, import or push
+	if _, loaded := m.restoring.LoadOrStore(siteID, true); loaded {
+		return ErrSiteBusy
+	}
+	return nil
 }
 
 // localRepoPath returns the local restic repo directory for a site
