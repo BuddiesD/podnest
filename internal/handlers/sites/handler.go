@@ -352,6 +352,15 @@ func (h *Handler) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// validate every requested domain before anything is created
+	siteDomains, status, err := h.normalizeRequestDomains(req.Domains)
+	if err != nil {
+		logger.Error("invalid domains for site creation '%s': %v", req.Name, err)
+		apiutil.ErrorMsg(w, status, err.Error())
+		return
+	}
+	req.Domains = siteDomains
+
 	// setup the site model
 	site := &models.Site{
 		UID:            user.ID,
@@ -379,18 +388,23 @@ func (h *Handler) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 	if site.SiteType == models.SiteTypeReverseProxy {
 
 		// create domains in the database and add them to the proxy configuration
+		var rpDomains []string
 		for _, d := range req.Domains {
-			d = strings.TrimSpace(d)
-			if d == "" {
-				continue
-			}
 
-			// create the domain record in the database and log any errors encountered, try to get a cert also
+			// create the domain record in the database, rolling the whole site back if it fails, then try to get a cert
 			if err := db.CreateDomain(h.DB, &models.Domain{SiteID: site.ID, Domain: d}); err != nil {
 				logger.Error("saving domain %s for reverse proxy site %s: %v", d, site.Name, err)
+				if len(rpDomains) > 0 {
+					h.Proxy.RemoveDomains(rpDomains)
+					h.Proxy.ForgetSite(site.ID, site.Port)
+				}
+				_ = db.DeleteSite(h.DB, site.ID)
+				apiutil.Error(w, http.StatusInternalServerError, err)
+				return
 			}
 			h.Proxy.AddDomain(d, site.Port, site.ID, site.Name)
 			h.Proxy.ObtainCert(d)
+			rpDomains = append(rpDomains, d)
 		}
 
 		// update the site status to running since reverse proxy sites do not require pod creation
@@ -464,14 +478,13 @@ func (h *Handler) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// create domain records in the database and add them to the proxy configuration, logging any errors encountered
+	// create domain records in the database and add them to the proxy configuration, rolling the site back if any fails
 	for _, d := range req.Domains {
-		d = strings.TrimSpace(d)
-		if d == "" {
-			continue
-		}
 		if err := db.CreateDomain(h.DB, &models.Domain{SiteID: site.ID, Domain: d}); err != nil {
 			logger.Error("saving domain %s for site %s: %v", d, site.Name, err)
+			_ = db.DeleteSite(h.DB, site.ID)
+			apiutil.Error(w, http.StatusInternalServerError, err)
+			return
 		}
 		h.Proxy.AddDomain(d, port, site.ID, site.Name)
 		addedDomains = append(addedDomains, d)
@@ -479,10 +492,6 @@ func (h *Handler) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 
 	// obtain SSL certificates for the specified domains using the proxy's certificate management functionality
 	for _, d := range req.Domains {
-		d = strings.TrimSpace(d)
-		if d == "" {
-			continue
-		}
 		h.Proxy.ObtainCert(d)
 	}
 

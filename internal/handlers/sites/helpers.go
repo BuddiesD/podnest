@@ -8,10 +8,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"podnest/internal/db"
 	"podnest/internal/fileutil"
+	"podnest/internal/handlers/domains"
 	"podnest/internal/logger"
 	"podnest/internal/models"
 	"podnest/internal/modules"
@@ -281,6 +283,50 @@ func (h *Handler) renameDatabase(ctx context.Context, site *models.Site, oldDB, 
 	// log success and return
 	logger.Debug("renameDatabase: '%s' → '%s' for site %s", oldDB, newDB, site.Name)
 	return nil
+}
+
+// normalizeRequestDomains validates requested domains the same way a domain
+// added to an existing site is, dropping blanks and duplicates. On failure it
+// returns the HTTP status to answer with and a message fit for the client.
+func (h *Handler) normalizeRequestDomains(raw []string) ([]string, int, error) {
+
+	// the panel's own hostname must not be claimable by a site
+	adminDomain, err := db.GetSetting(h.DB, "admin_domain")
+	if err != nil {
+		return nil, http.StatusInternalServerError, err
+	}
+	ad := strings.ToLower(strings.TrimSpace(adminDomain))
+
+	seen := make(map[string]bool, len(raw))
+	var out []string
+	for _, d := range raw {
+		if strings.TrimSpace(d) == "" {
+			continue
+		}
+
+		// reject rather than mangle — an unroutable entry still triggers ACME issuance
+		clean, err := domains.NormalizeDomain(d)
+		if err != nil {
+			return nil, http.StatusBadRequest, fmt.Errorf("invalid domain: %s", d)
+		}
+		if seen[clean] {
+			continue
+		}
+		seen[clean] = true
+
+		if ad != "" && clean == ad {
+			return nil, http.StatusConflict, fmt.Errorf("domain is reserved for the panel")
+		}
+		exists, err := db.DomainExists(h.DB, clean)
+		if err != nil {
+			return nil, http.StatusInternalServerError, err
+		}
+		if exists {
+			return nil, http.StatusConflict, fmt.Errorf("domain already registered: %s", clean)
+		}
+		out = append(out, clean)
+	}
+	return out, 0, nil
 }
 
 // setEnvValue rewrites a single KEY=VALUE line in a site's .env file, leaving
