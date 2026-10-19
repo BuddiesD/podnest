@@ -395,7 +395,7 @@ export async function viewSiteDetail(root, { id, tab }) {
                     <a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 12 : 11) : (showPHP ? 11 : 10)}"><span uk-icon="icon: history; ratio: 0.85"></span> Backups</a>
                     ${hasDB ? `<a href="#" data-switcher="database"><span uk-icon="icon: table; ratio: 0.85"></span> Database</a>` : ""}
                     ${showCrons ? `<a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 13 : 12) : (showPHP ? 12 : 11)}"><span uk-icon="icon: clock; ratio: 0.85"></span> Crons</a>` : ""}
-                    <a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 14 : 13) : (showPHP ? 13 : 12)}"><span uk-icon="icon: forward; ratio: 0.85"></span> Redirects</a>
+                    <a href="#" data-switcher="${(site.SiteType === 1 ? (showPHP ? 14 : 13) : (showPHP ? 13 : 12)) - (showCrons ? 0 : 1)}"><span uk-icon="icon: forward; ratio: 0.85"></span> Redirects</a>
                     <a href="#" data-switcher="files"><span uk-icon="icon: folder; ratio: 0.85"></span> Files</a>
                 </div>
             </li>
