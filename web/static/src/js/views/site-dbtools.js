@@ -9,7 +9,7 @@ import { confirm, escapeHtml, hideProgressModal, showProgressModal } from '../he
 import { toast } from '../toast.js';
 
 // renderDBToolsTab returns the static HTML shell for the database tools tab
-export function renderDBToolsTab(siteId) {
+export function renderDBToolsTab(siteId, siteType) {
     return `
         <div id="dbtools-panel" data-site-id="${siteId}">
 
@@ -25,6 +25,37 @@ export function renderDBToolsTab(siteId) {
                     Downloads a gzip-compressed SQL dump of the site's database, including stored routines.
                 </p>
             </div>
+
+            ${siteType === 1 ? `
+            <!-- search-replace card (WordPress only) -->
+            <div class="kp-card uk-padding-small uk-margin-bottom">
+                <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                    <h3 class="kp-view-title">Search &amp; Replace</h3>
+                    <div class="uk-flex" style="gap:6px">
+                        <button class="uk-button kp-btn-secondary kp-btn-sm" id="dbtools-sr-preview" uk-tooltip="Count Matches Without Changing Anything">
+                            <span uk-icon="search"></span>
+                        </button>
+                        <button class="uk-button kp-btn-primary kp-btn-sm" id="dbtools-sr-run" uk-tooltip="Run the Search &amp; Replace">
+                            <span uk-icon="play"></span>
+                        </button>
+                    </div>
+                </div>
+                <div class="uk-grid-small uk-child-width-1-2@s" uk-grid>
+                    <div>
+                        <label class="uk-form-label kp-text" for="dbtools-sr-search">Search</label>
+                        <input class="uk-input kp-input" id="dbtools-sr-search" type="text" maxlength="1024" autocomplete="off">
+                    </div>
+                    <div>
+                        <label class="uk-form-label kp-text" for="dbtools-sr-replace">Replace</label>
+                        <input class="uk-input kp-input" id="dbtools-sr-replace" type="text" maxlength="1024" autocomplete="off">
+                    </div>
+                </div>
+                <p class="kp-muted uk-text-small uk-margin-small-top">
+                    Runs WP-CLI's serialization-safe search-replace across every table in the site's database.
+                    Preview first to see how many replacements would be made.
+                </p>
+                <div id="dbtools-sr-result"></div>
+            </div>` : ""}
 
             <!-- import card -->
             <div class="kp-card uk-padding-small uk-margin-bottom">
@@ -177,6 +208,10 @@ export function wireDBToolsTab(root, siteId) {
         pollImportStatus(root, siteId);
     });
 
+    // search-replace (WordPress only)
+    root.querySelector("#dbtools-sr-preview")?.addEventListener("click", () => runSearchReplace(root, siteId, true));
+    root.querySelector("#dbtools-sr-run")?.addEventListener("click", () => runSearchReplace(root, siteId, false));
+
     // refresh the SFTP dump list
     root.querySelector("#dbtools-sftp-refresh")?.addEventListener("click", () => loadImportFiles(root, siteId));
     loadImportFiles(root, siteId);
@@ -245,4 +280,43 @@ function pollImportStatus(root, siteId) {
             }
         }
     }, 3000);
+}
+
+
+// runSearchReplace sends the search-replace terms, confirming first on a live
+// run, and reports the replacement count under the form
+async function runSearchReplace(root, siteId, dryRun) {
+    const search = root.querySelector("#dbtools-sr-search")?.value ?? "";
+    const replace = root.querySelector("#dbtools-sr-replace")?.value ?? "";
+    const result = root.querySelector("#dbtools-sr-result");
+    if (!search) {
+        toast.error("Enter a search term first");
+        return;
+    }
+    if (!dryRun) {
+        const ok = await confirm(
+            "Run Search & Replace",
+            `Every occurrence of "${search}" in this site's database will be replaced with "${replace}". This cannot be undone — download a dump first if unsure.`
+        );
+        if (!ok) return;
+    }
+
+    showProgressModal(
+        dryRun ? "Previewing Search & Replace" : "Running Search & Replace",
+        "Scanning every table in the site's database — this may take a while on large sites."
+    );
+
+    try {
+        const res = await api.post(`/sites/${siteId}/db/search-replace`, { search, replace, dry_run: dryRun }, 1800000);
+        hideProgressModal();
+        const n = res?.count ?? 0;
+        const msg = dryRun
+            ? `${n} replacement${n === 1 ? "" : "s"} would be made`
+            : `${n} replacement${n === 1 ? "" : "s"} made`;
+        if (result) result.innerHTML = `<p class="kp-text uk-text-small uk-margin-small-top uk-margin-remove-bottom">${escapeHtml(msg)}</p>`;
+        if (!dryRun) toast.success(msg);
+    } catch (err) {
+        hideProgressModal();
+        toast.error(err.message);
+    }
 }

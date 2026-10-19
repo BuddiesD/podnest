@@ -420,7 +420,7 @@ export async function viewSiteDetail(root, { id, tab }) {
             <li>${renderBackupsTab(id)}</li>
             ${showCrons ? `<li>${renderCronsTab(id)}</li>` : ""}
             <li>${renderRedirectsTab()}</li>
-            ${hasDB ? `<li>${renderDBToolsTab(id)}</li>` : ""}
+            ${hasDB ? `<li>${renderDBToolsTab(id, site.SiteType)}</li>` : ""}
             <li>${renderFilesTab(id)}</li>
         </ul>`}`;
 

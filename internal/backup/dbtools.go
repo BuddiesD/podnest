@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"podnest/internal/logger"
@@ -190,4 +191,46 @@ func (m *Manager) ImportSQL(ctx context.Context, site *models.Site, dumpPath str
 
 	logger.Debug("ImportSQL: imported %s into site %s (wipe=%v)", filepath.Base(dumpPath), site.Name, wipe)
 	return nil
+}
+
+// SearchReplace runs WP-CLI's serialization-safe search-replace across every
+// table in a WordPress site's database and returns the number of replacements.
+// On a dry run nothing is written and the count is what would be replaced.
+func (m *Manager) SearchReplace(ctx context.Context, site *models.Site, search, replace string, dryRun bool) (int, error) {
+	containerName := podman.ContainerName(site.Name, "php")
+
+	if err := m.ensureWPCLI(ctx, containerName); err != nil {
+		return 0, fmt.Errorf("SearchReplace: %w", err)
+	}
+
+	// the terms go in as discrete argv entries — no shell is involved
+	args := []string{
+		"exec", containerName,
+		"/tmp/wp", "--path=/var/www/html", "--allow-root",
+		"search-replace", "--all-tables", "--precise", "--format=count",
+	}
+	if dryRun {
+		args = append(args, "--dry-run")
+	}
+	args = append(args, search, replace)
+
+	cmd := exec.CommandContext(ctx, "podman", args...)
+	cmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock)
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return 0, fmt.Errorf("SearchReplace: wp-cli: %w — %s", err, strings.TrimSpace(stderr.String()))
+	}
+
+	// --format=count prints the total on the last line of output
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	count, err := strconv.Atoi(strings.TrimSpace(lines[len(lines)-1]))
+	if err != nil {
+		return 0, fmt.Errorf("SearchReplace: unexpected wp-cli output %q", strings.TrimSpace(string(out)))
+	}
+
+	logger.Debug("SearchReplace: site %s — %d replacements (dry_run=%v)", site.Name, count, dryRun)
+	return count, nil
 }

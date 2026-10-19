@@ -5739,6 +5739,135 @@
         }
       }
     },
+    "/sites/{id}/db/search-replace": {
+      "post": {
+        "tags": [
+          "Database"
+        ],
+        "summary": "Search-replace database (WordPress)",
+        "operationId": "post_sites_id_db_search_replace",
+        "responses": {
+          "200": {
+            "description": "Replacement count (what would be replaced on a dry run)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "dry_run": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request, invalid terms, or not a WordPress site",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An import or restore is running for this site",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "WP-CLI failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Site ID (or user ID under the Users tag).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "search"
+                ],
+                "properties": {
+                  "search": {
+                    "type": "string",
+                    "maxLength": 1024,
+                    "description": "Text to find. Cannot start with a dash."
+                  },
+                  "replace": {
+                    "type": "string",
+                    "maxLength": 1024,
+                    "description": "Replacement text; may be empty. Cannot start with a dash."
+                  },
+                  "dry_run": {
+                    "type": "boolean",
+                    "description": "Count matches without writing anything."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/sites/{id}/domains": {
       "get": {
         "tags": [

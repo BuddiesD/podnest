@@ -67,6 +67,13 @@ func (m Module) RegisterRoutes(mux *http.ServeMux, resolve modules.SiteResolver)
 		}
 		m.apiImportStatus(w, r, site)
 	})
+	mux.HandleFunc("POST /sites/{id}/db/search-replace", func(w http.ResponseWriter, r *http.Request) {
+		site, ok := resolve(w, r)
+		if !ok {
+			return
+		}
+		m.apiSearchReplace(w, r, site)
+	})
 }
 
 // OnSiteCreate is a no-op; the database tools hold no per-site state.

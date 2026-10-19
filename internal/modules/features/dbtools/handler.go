@@ -196,6 +196,74 @@ func (m Module) apiImportStatus(w http.ResponseWriter, _ *http.Request, site *mo
 	apiutil.JSON(w, http.StatusOK, map[string]any{"active": m.Manager.IsRestoring(site.ID), "error": m.Manager.ImportError(site.ID)})
 }
 
+// apiSearchReplace runs a serialization-safe search-replace across a WordPress
+// site's database via WP-CLI, or reports the replacement count on a dry run.
+func (m Module) apiSearchReplace(w http.ResponseWriter, r *http.Request, site *models.Site) {
+	if site.SiteType != models.SiteTypeWordPress {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "search-replace is only available for WordPress sites")
+		return
+	}
+	if m.Manager.IsRestoring(site.ID) {
+		apiutil.ErrorMsg(w, http.StatusConflict, "an import or restore is running for this site")
+		return
+	}
+
+	var req struct {
+		Search  string `json:"search"`
+		Replace string `json:"replace"`
+		DryRun  bool   `json:"dry_run"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Error("apiSearchReplace: decode site %d: %v", site.ID, err)
+		apiutil.Error(w, http.StatusBadRequest, err)
+		return
+	}
+	if msg := validateSearchReplace(req.Search, req.Replace); msg != "" {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, msg)
+		return
+	}
+
+	// a live run must finish once started, so a dropped connection never
+	// leaves the database half-replaced
+	ctx := r.Context()
+	if !req.DryRun {
+		ctx = context.WithoutCancel(ctx)
+	}
+
+	count, err := m.Manager.SearchReplace(ctx, site, req.Search, req.Replace, req.DryRun)
+	if err != nil {
+		logger.Error("apiSearchReplace: site %d: %v", site.ID, err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	logger.Debug("apiSearchReplace: site %d — %d replacements (dry_run=%v)", site.ID, count, req.DryRun)
+	apiutil.JSON(w, http.StatusOK, map[string]any{"count": count, "dry_run": req.DryRun})
+}
+
+// validateSearchReplace bounds the search-replace terms at the handler edge,
+// returning a message for the first problem found, or "" when they are usable
+func validateSearchReplace(search, replace string) string {
+	if search == "" {
+		return "search is required"
+	}
+	if search == replace {
+		return "search and replace are identical"
+	}
+	if len(search) > 1024 || len(replace) > 1024 {
+		return "search and replace are limited to 1024 characters"
+	}
+	// wp-cli parses a leading dash as an option, so a term could otherwise
+	// smuggle in flags such as --export or --url
+	if strings.HasPrefix(search, "-") || strings.HasPrefix(replace, "-") {
+		return "search and replace cannot start with a dash"
+	}
+	if strings.ContainsRune(search, 0) || strings.ContainsRune(replace, 0) {
+		return "search and replace cannot contain NUL bytes"
+	}
+	return ""
+}
+
 // downloadWriter holds back the attachment response headers until the first
 // write, so a dump that fails before producing output can still return a JSON
 // error instead of a zero-length 200 with a Content-Disposition attached.
