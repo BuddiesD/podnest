@@ -13,118 +13,161 @@ export function renderDBToolsTab(siteId, siteType) {
     return `
         <div id="dbtools-panel" data-site-id="${siteId}">
 
-            <!-- export card -->
-            <div class="kp-card uk-padding-small uk-margin-bottom">
-                <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
-                    <h3 class="kp-view-title">Export</h3>
-                    <button class="uk-button kp-btn-primary kp-btn-sm" id="dbtools-dump-btn" uk-tooltip="Download a Database Dump">
-                        <span uk-icon="download"></span>
-                    </button>
-                </div>
-                <p class="kp-muted uk-text-small uk-margin-small-top">
-                    Downloads a gzip-compressed SQL dump of the site's database, including stored routines.
-                </p>
-            </div>
+            <!-- tab pills -->
+            <ul class="kp-tab-pills" id="kp-db-pills">
+                <li data-tab="db-export"><a href="#"><span uk-icon="icon: download; ratio: 0.85"></span> Export</a></li>
+                <li data-tab="db-import"><a href="#"><span uk-icon="icon: upload; ratio: 0.85"></span> Import</a></li>
+                ${siteType === 1 ? `<li data-tab="db-replace"><a href="#"><span uk-icon="icon: search; ratio: 0.85"></span> Search &amp; Replace</a></li>` : ""}
+                <li data-tab="db-tables"><a href="#"><span uk-icon="icon: table; ratio: 0.85"></span> Optimize &amp; Repair</a></li>
+            </ul>
 
-            ${siteType === 1 ? `
-            <!-- search-replace card (WordPress only) -->
-            <div class="kp-card uk-padding-small uk-margin-bottom">
-                <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
-                    <h3 class="kp-view-title">Search &amp; Replace</h3>
-                    <div class="uk-flex" style="gap:6px">
-                        <button class="uk-button kp-btn-secondary kp-btn-sm" id="dbtools-sr-preview" uk-tooltip="Count Matches Without Changing Anything">
-                            <span uk-icon="search"></span>
-                        </button>
-                        <button class="uk-button kp-btn-primary kp-btn-sm" id="dbtools-sr-run" uk-tooltip="Run the Search &amp; Replace">
-                            <span uk-icon="play"></span>
-                        </button>
+            <!-- switcher panels -->
+            <ul class="uk-switcher uk-margin-large-bottom" id="kp-db-switcher">
+
+                <!-- export -->
+                <li>
+                    <div class="kp-card uk-padding-small">
+                        <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                            <h3 class="kp-view-title">Export</h3>
+                            <button class="uk-button kp-btn-primary kp-btn-sm" id="dbtools-dump-btn" uk-tooltip="Download a Database Dump">
+                                <span uk-icon="download"></span>
+                            </button>
+                        </div>
+                        <p class="kp-muted uk-text-small uk-margin-small-top">
+                            Downloads a gzip-compressed SQL dump of the site's database, including stored routines.
+                        </p>
                     </div>
-                </div>
-                <div class="uk-grid-small uk-child-width-1-2@s" uk-grid>
-                    <div>
-                        <label class="uk-form-label kp-text" for="dbtools-sr-search">Search</label>
-                        <input class="uk-input kp-input" id="dbtools-sr-search" type="text" maxlength="1024" autocomplete="off">
+                </li>
+
+                <!-- import -->
+                <li>
+                    <label class="uk-flex uk-flex-middle" style="gap:8px;cursor:pointer">
+                        <input type="checkbox" class="uk-checkbox" id="dbtools-wipe">
+                        <span class="kp-text">Wipe the database before importing</span>
+                    </label>
+                    <p class="kp-muted uk-text-small uk-margin-small-top uk-margin-small-bottom">
+                        Without wipe, the dump is merged into the existing database — tables the dump recreates are
+                        replaced, everything else is kept. The site is in maintenance mode while the import runs.
+                    </p>
+
+                    <div class="kp-card uk-padding-small uk-margin-bottom">
+                        <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                            <h3 class="kp-view-title">Upload Dump</h3>
+                            <button class="uk-button kp-btn-primary kp-btn-sm" id="dbtools-upload-btn" uk-tooltip="Upload &amp; Import">
+                                <span uk-icon="cloud-upload"></span>
+                            </button>
+                        </div>
+                        <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                            Accepts <span class="kp-mono">.sql</span> or <span class="kp-mono">.sql.gz</span>. Maximum upload
+                            size is <strong>512 MB</strong>. For larger dumps, transfer the file to
+                            <span class="kp-mono">backups/import/</span> via SFTP and use <em>Import from SFTP</em> below.
+                        </p>
+                        <input type="file" class="uk-input kp-input" id="dbtools-file-input" accept=".sql,.gz">
                     </div>
-                    <div>
-                        <label class="uk-form-label kp-text" for="dbtools-sr-replace">Replace</label>
-                        <input class="uk-input kp-input" id="dbtools-sr-replace" type="text" maxlength="1024" autocomplete="off">
+
+                    <div class="kp-card uk-padding-small">
+                        <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                            <h3 class="kp-view-title">Import from SFTP</h3>
+                            <button class="uk-button kp-btn-ghost kp-btn-sm" id="dbtools-sftp-refresh" uk-tooltip="Refresh the SFTP File List">
+                                <span uk-icon="refresh"></span>
+                            </button>
+                        </div>
+                        <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                            Dumps found in <span class="kp-mono">backups/import/</span> on this site's SFTP.
+                        </p>
+                        <div id="dbtools-sftp-list">
+                            <div uk-spinner="ratio: 0.6" style="color:var(--kp-blue)"></div>
+                        </div>
                     </div>
-                </div>
-                <p class="kp-muted uk-text-small uk-margin-small-top">
-                    Runs WP-CLI's serialization-safe search-replace across every table in the site's database.
-                    Preview first to see how many replacements would be made.
-                </p>
-                <div id="dbtools-sr-result"></div>
-            </div>` : ""}
+                </li>
 
-            <!-- import card -->
-            <div class="kp-card uk-padding-small uk-margin-bottom">
-                <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
-                    <h3 class="kp-view-title">Import</h3>
-                    <button class="uk-button kp-btn-ghost kp-btn-sm" id="dbtools-sftp-refresh" uk-tooltip="Refresh the SFTP File List">
-                        <span uk-icon="refresh"></span>
-                    </button>
-                </div>
-                <label class="uk-flex uk-flex-middle" style="gap:8px;cursor:pointer">
-                    <input type="checkbox" class="uk-checkbox" id="dbtools-wipe">
-                    <span class="kp-text">Wipe the database before importing</span>
-                </label>
-                <p class="kp-muted uk-text-small uk-margin-small-top">
-                    Without wipe, the dump is merged into the existing database — tables the dump recreates are
-                    replaced, everything else is kept. The site is in maintenance mode while the import runs.
-                </p>
-
-                <hr class="uk-divider-small">
-
-                <!-- upload section -->
-                <h4 class="kp-text uk-margin-small-bottom">Upload Dump</h4>
-                <p class="kp-muted uk-text-small uk-margin-small-bottom">
-                    Accepts <span class="kp-mono">.sql</span> or <span class="kp-mono">.sql.gz</span>. Maximum upload
-                    size is <strong>512 MB</strong>. For larger dumps, transfer the file to
-                    <span class="kp-mono">backups/import/</span> via SFTP and use the <em>Import from SFTP</em> section below.
-                </p>
-                <div class="uk-margin-small">
-                    <input type="file" class="uk-input kp-input" id="dbtools-file-input" accept=".sql,.gz">
-                </div>
-                <button class="uk-button kp-btn-primary kp-btn-sm uk-margin-small-top" id="dbtools-upload-btn">
-                    Upload &amp; Import
-                </button>
-
-                <hr class="uk-divider-small uk-margin-small">
-
-                <!-- SFTP section -->
-                <h4 class="kp-text uk-margin-small-bottom">Import from SFTP</h4>
-                <p class="kp-muted uk-text-small uk-margin-small-bottom">
-                    Dumps found in <span class="kp-mono">backups/import/</span> on this site's SFTP.
-                </p>
-                <div id="dbtools-sftp-list">
-                    <div uk-spinner="ratio: 0.6" style="color:var(--kp-blue)"></div>
-                </div>
-            </div>
-
-            <!-- optimize / repair card -->
-            <div class="kp-card uk-padding-small">
-                <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
-                    <h3 class="kp-view-title">Optimize &amp; Repair</h3>
-                    <div class="uk-flex" style="gap:6px">
-                        <button class="uk-button kp-btn-ghost kp-btn-sm" id="dbtools-tables-refresh" uk-tooltip="Refresh the Table List">
-                            <span uk-icon="refresh"></span>
-                        </button>
-                        <button class="uk-button kp-btn-primary kp-btn-sm dbtools-maintain-btn" data-action="optimize" uk-tooltip="Optimize the Selected Tables" disabled>
-                            <span uk-icon="bolt"></span>
-                        </button>
-                        <button class="uk-button kp-btn-secondary kp-btn-sm dbtools-maintain-btn" data-action="repair" uk-tooltip="Repair the Selected Tables" disabled>
-                            <span uk-icon="cog"></span>
-                        </button>
+                ${siteType === 1 ? `
+                <!-- search-replace (WordPress only) -->
+                <li>
+                    <div class="kp-card uk-padding-small">
+                        <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                            <h3 class="kp-view-title">Search &amp; Replace</h3>
+                            <div class="uk-flex" style="gap:6px">
+                                <button class="uk-button kp-btn-secondary kp-btn-sm" id="dbtools-sr-preview" uk-tooltip="Count Matches Without Changing Anything">
+                                    <span uk-icon="search"></span>
+                                </button>
+                                <button class="uk-button kp-btn-primary kp-btn-sm" id="dbtools-sr-run" uk-tooltip="Run the Search &amp; Replace">
+                                    <span uk-icon="play"></span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="uk-grid-small uk-child-width-1-2@s" uk-grid>
+                            <div>
+                                <label class="uk-form-label kp-text" for="dbtools-sr-search">Search</label>
+                                <input class="uk-input kp-input" id="dbtools-sr-search" type="text" maxlength="1024" autocomplete="off">
+                            </div>
+                            <div>
+                                <label class="uk-form-label kp-text" for="dbtools-sr-replace">Replace</label>
+                                <input class="uk-input kp-input" id="dbtools-sr-replace" type="text" maxlength="1024" autocomplete="off">
+                            </div>
+                        </div>
+                        <p class="kp-muted uk-text-small uk-margin-small-top">
+                            Runs WP-CLI's serialization-safe search-replace across every table in the site's database.
+                            Preview first to see how many replacements would be made.
+                        </p>
+                        <div id="dbtools-sr-result"></div>
                     </div>
-                </div>
-                <div id="dbtools-tables-wrap">
-                    <div uk-spinner="ratio: 0.8" style="color:var(--kp-blue)"></div>
-                </div>
-                <div id="dbtools-maintain-result"></div>
-            </div>
+                </li>` : ""}
 
+                <!-- optimize / repair -->
+                <li>
+                    <div class="kp-card uk-padding-small">
+                        <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                            <h3 class="kp-view-title">Optimize &amp; Repair</h3>
+                            <div class="uk-flex" style="gap:6px">
+                                <button class="uk-button kp-btn-ghost kp-btn-sm" id="dbtools-tables-refresh" uk-tooltip="Refresh the Table List">
+                                    <span uk-icon="refresh"></span>
+                                </button>
+                                <button class="uk-button kp-btn-primary kp-btn-sm dbtools-maintain-btn" data-action="optimize" uk-tooltip="Optimize the Selected Tables" disabled>
+                                    <span uk-icon="bolt"></span>
+                                </button>
+                                <button class="uk-button kp-btn-secondary kp-btn-sm dbtools-maintain-btn" data-action="repair" uk-tooltip="Repair the Selected Tables" disabled>
+                                    <span uk-icon="cog"></span>
+                                </button>
+                            </div>
+                        </div>
+                        <div id="dbtools-tables-wrap">
+                            <div uk-spinner="ratio: 0.8" style="color:var(--kp-blue)"></div>
+                        </div>
+                        <div id="dbtools-maintain-result"></div>
+                    </div>
+                </li>
+            </ul>
         </div>`;
+}
+
+// initDBToolsPills wires the database sub-tab pills to their switcher and lands
+// on the pill named by tab, if any
+export function initDBToolsPills(root, tab) {
+    const panel    = root.querySelector("#dbtools-panel");
+    const pills    = root.querySelector("#kp-db-pills");
+    const switcher = root.querySelector("#kp-db-switcher");
+    if (!panel || !pills || !switcher) return;
+
+    const siteId = panel.dataset.siteId;
+    const items  = [...pills.querySelectorAll(":scope > li")];
+
+    // show the nth database panel, optionally recording its pill in the hash
+    const showTab = (idx, updateHash) => {
+        UIkit.switcher(switcher).show(idx);
+        items.forEach((li, i) => li.classList.toggle("kp-pill-active", i === idx));
+        if (!updateHash) return;
+        history.replaceState(null, "", `#site-detail/${siteId}/${items[idx].dataset.tab}`);
+    };
+
+    items.forEach((li, i) => {
+        li.querySelector(":scope > a").addEventListener("click", (e) => {
+            e.preventDefault();
+            showTab(i, true);
+        });
+    });
+
+    showTab(Math.max(0, items.findIndex((li) => li.dataset.tab === tab)), false);
 }
 
 // wireDBToolsTab binds the database tools actions

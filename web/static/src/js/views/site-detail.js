@@ -13,7 +13,7 @@ import { loadBackupsPanel, renderBackupsTab, wireBackupsPanel } from './site-bac
 import { loadBasicAuthTab, renderBasicAuthTab, wireBasicAuthTab } from './site-basicauth.js';
 import { renderConfigTab, renderVarnishTab, wireConfigTabs } from './site-configs.js';
 import { loadCronsPanel, renderCronsTab, wireCronsPanel } from './site-crons.js';
-import { renderDBToolsTab, wireDBToolsTab } from './site-dbtools.js';
+import { initDBToolsPills, renderDBToolsTab, wireDBToolsTab } from './site-dbtools.js';
 import { loadFilesPanel, renderFilesTab, wireFilesTab } from './site-files.js';
 import { renderLogsTab, wireLogsTab } from './site-logs.js';
 import { loadAllDomainSSL, renderOverviewTab, wireDomainActions, wireOverviewTab } from './site-overview.js';
@@ -40,7 +40,7 @@ function initPillTabs(root, id, tab) {
     if (!pills || !switcher) return;
 
     // sub-panels carry their own pills; their indexes vary by site type, so resolve them from the DOM
-    const subPills = ["#kp-sec-pills", "#kp-waf-pills"].map(sel => root.querySelector(sel)).filter(Boolean);
+    const subPills = ["#kp-sec-pills", "#kp-waf-pills", "#kp-db-pills"].map(sel => root.querySelector(sel)).filter(Boolean);
     const panelIdx = (el) => [...switcher.children].findIndex(li => li.contains(el));
 
     // show the nth switcher panel and update pill active states
@@ -519,6 +519,7 @@ export async function viewSiteDetail(root, { id, tab }) {
         const _dbPanel = root.querySelector("#dbtools-panel");
         if (_fmSwitcher && _dbLink && _dbPanel) _dbLink.dataset.switcher = String([..._fmSwitcher.children].findIndex(li => li.contains(_dbPanel)));
         wireDBToolsTab(root, id);
+        initDBToolsPills(root, tab);
     }
 
     wireHealthBadges(root, id);
