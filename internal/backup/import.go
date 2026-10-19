@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"podnest/internal/db"
 	"podnest/internal/logger"
@@ -738,6 +739,16 @@ func (m *Manager) ensureWPCLI(ctx context.Context, containerName string) error {
 		return fmt.Errorf("ensureWPCLI: start install exec: %w", err)
 	}
 
+	// the start call returns before the download finishes — running wp before
+	// the binary lands exits 127
+	code, err := m.waitExec(ctx, installResp.ID, 60*time.Second)
+	if err != nil {
+		return fmt.Errorf("ensureWPCLI: wait install exec: %w", err)
+	}
+	if code != 0 {
+		return fmt.Errorf("ensureWPCLI: wp-cli install exited %d", code)
+	}
+
 	logger.Debug("ensureWPCLI: wp-cli installed in %s", containerName)
 	return nil
 }
@@ -783,20 +794,45 @@ func (m *Manager) wpSearchReplace(ctx context.Context, site *models.Site, fromDo
 		return fmt.Errorf("wpSearchReplace: start exec: %w", err)
 	}
 
-	// a failed wp-cli run exits non-zero without erroring the API call
-	var inspect struct {
-		ExitCode int  `json:"ExitCode"`
-		Running  bool `json:"Running"`
+	// a failed wp-cli run exits non-zero without erroring the API call, and the
+	// exit code only means anything once the run has finished
+	code, err := m.waitExec(ctx, execResp.ID, 30*time.Minute)
+	if err != nil {
+		return fmt.Errorf("wpSearchReplace: wait exec: %w", err)
 	}
-	if err := m.podman.GetJSON(ctx, "/v4.0.0/libpod/exec/"+execResp.ID+"/json", &inspect); err != nil {
-		return fmt.Errorf("wpSearchReplace: inspect exec: %w", err)
-	}
-	if inspect.ExitCode != 0 {
-		return fmt.Errorf("wpSearchReplace: wp-cli exited %d", inspect.ExitCode)
+	if code != 0 {
+		return fmt.Errorf("wpSearchReplace: wp-cli exited %d", code)
 	}
 
 	logger.Debug("wpSearchReplace: replaced %s → %s for site %s", fromDomain, toDomain, site.Name)
 	return nil
+}
+
+// waitExec polls a podman exec until it exits or timeout passes, returning its
+// exit code. The exec start call can return before the command finishes, so
+// the exit code is only meaningful once Running is false.
+func (m *Manager) waitExec(ctx context.Context, execID string, timeout time.Duration) (int, error) {
+	deadline := time.Now().Add(timeout)
+	var inspect struct {
+		ExitCode int  `json:"ExitCode"`
+		Running  bool `json:"Running"`
+	}
+	for {
+		if err := m.podman.GetJSON(ctx, "/v4.0.0/libpod/exec/"+execID+"/json", &inspect); err != nil {
+			return 0, fmt.Errorf("waitExec: inspect: %w", err)
+		}
+		if !inspect.Running {
+			return inspect.ExitCode, nil
+		}
+		if time.Now().After(deadline) {
+			return 0, fmt.Errorf("waitExec: still running after %s", timeout)
+		}
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
 }
 
 // readImportManifest reads manifest.json from the extracted archive temp dir
