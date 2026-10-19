@@ -34,7 +34,7 @@ export function loadAllDomainSSL(domains) {
     domains.forEach((d) => loadDomainSSL(d.Domain, d.ID));
 }
 
-export function renderOverviewTab(site, domains, sftp, parentID = 0, parentName = null) {
+export function renderOverviewTab(site, domains, sftp, parentID = 0, parentName = null, pushTargets = []) {
     const hasPMA = site.SiteType !== 3 && site.PMAPort > 0;
     return `
         <div class="uk-grid-medium" uk-grid>
@@ -55,15 +55,15 @@ export function renderOverviewTab(site, domains, sftp, parentID = 0, parentName 
                     </table>
                 </div>
                 
-                ${parentName ? `
+                ${pushTargets.length ? `
                 <div class="kp-card uk-padding-small uk-margin-small-top">
                     <h3 class="kp-view-title uk-margin-bottom">Site Sync</h3>
                     <p class="kp-muted uk-text-small uk-margin-remove-bottom">
-                        Push files and/or database from this clone onto its parent site.
+                        Push files and/or database from this site onto its parent or one of its clones.
                     </p>
                     <div class="uk-flex uk-margin-small-top" style="gap:8px">
                         <button class="uk-button kp-btn-secondary kp-btn-sm" id="sync-push-btn">
-                            <span uk-icon="cloud-upload"></span> Push To Parent
+                            <span uk-icon="cloud-upload"></span> Push Site
                         </button>
                     </div>
                 </div>` : ""}
@@ -184,7 +184,7 @@ export function wireDomainActions(root, siteId) {
     });
 }
 
-export function wireOverviewTab(root, siteId, site = null) {
+export function wireOverviewTab(root, siteId, site = null, pushTargets = []) {
     root.querySelector('#sftp-regen-btn')?.addEventListener('click', async () => {
         const btn  = root.querySelector('#sftp-regen-btn');
         const orig = btn.innerHTML;
@@ -291,11 +291,11 @@ export function wireOverviewTab(root, siteId, site = null) {
         }
     });
 
-    // wire Site Sync push button — only present on clone sites (ParentID > 0)
+    // wire Site Sync push button — only present when the site has a parent or clones
     root.querySelector('#sync-push-btn')?.addEventListener('click', async () => {
-        const parentName = root.querySelector('[data-action="manage"][data-id="' + site.ParentID + '"]')?.textContent?.trim() ?? 'parent';
-        const opts = await showSyncModal(site.Name, parentName, site.SiteType !== 3 && site.PMAPort > 0);
+        const opts = await showSyncModal(site, pushTargets, site.SiteType !== 3 && site.PMAPort > 0);
         if (!opts) return;
+        const targetName = pushTargets.find(t => t.ID === opts.target_id)?.Name ?? 'target';
         try {
             await api.post(`/sites/${siteId}/push`, opts);
         } catch (e) {
@@ -303,7 +303,7 @@ export function wireOverviewTab(root, siteId, site = null) {
             return;
         }
 
-        showProgressModal('Push Running', `Backing up ${parentName}, then pushing ${site.Name} onto it.`);
+        showProgressModal('Push Running', `Backing up ${targetName}, then pushing ${site.Name} onto it.`);
 
         // poll the job status every 4 seconds until it finishes, or 30 min timeout
         const deadline = Date.now() + 30 * 60 * 1000;
@@ -319,21 +319,11 @@ export function wireOverviewTab(root, siteId, site = null) {
                     } else if (res?.error) {
                         toast.error(`Push failed: ${res.error}`);
                     } else {
-                        toast.success('Push to parent complete');
+                        toast.success(`Push to ${targetName} complete`);
                     }
                 }
             } catch (_) { /* keep polling on transient errors */ }
         }, 4000);
     });
 
-    root.querySelector('#sync-push-btn')?.addEventListener('click', async () => {
-        const ok = await showSyncModal('push', site.Name, root.querySelector('[data-action="manage"][data-id="' + site.ParentID + '"]')?.textContent?.trim() ?? 'parent');
-        if (!ok) return;
-        try {
-            //await api.post(`/sites/${siteId}/sync/push`);
-            toast.success('Push to parent complete');
-        } catch (e) {
-            toast.error(e.message);
-        }
-    });
 }

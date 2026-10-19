@@ -303,6 +303,8 @@ export async function viewSiteDetail(root, { id, tab }) {
         api.get(`/sites/${id}/configs`),
     ]);
     const allSites = Array.isArray(rawSites) ? rawSites : [];
+    // a site can push onto its parent and onto any of its own clones
+    const pushTargets = allSites.filter(s => s.ID === site.ParentID || s.ParentID === site.ID);
     const showPHP = site.SiteType === 1 || site.SiteType === 2;
     const isRP = site.SiteType === 6;
     const showCrons = [1, 2, 4, 5].includes(site.SiteType);
@@ -402,7 +404,7 @@ export async function viewSiteDetail(root, { id, tab }) {
 
         <!-- switcher panels (driven by pills above) -->
         <ul class="uk-switcher" id="kp-site-switcher">
-            <li>${renderOverviewTab(site, domains ?? [], sftp, site.ParentID ?? 0, allSites.find(s => s.ID === site.ParentID)?.Name ?? null)}</li>
+            <li>${renderOverviewTab(site, domains ?? [], sftp, site.ParentID ?? 0, allSites.find(s => s.ID === site.ParentID)?.Name ?? null, pushTargets)}</li>
             <li>${renderStatsTab(id, site.SiteType)}</li>
             <li>${renderConfigTab(id, 1, configs["1"])}</li>
             ${showPHP ? `<li>${renderConfigTab(id, 2, configs["2"])}</li>` : ""}
@@ -495,7 +497,7 @@ export async function viewSiteDetail(root, { id, tab }) {
     wireConfigTabs(root, id, _rpWireAbort.signal);
     wireDomainActions(root, id);
     if (site.SiteType === 1) wireWPCLITab(root, id);
-    wireOverviewTab(root, id, site);
+    wireOverviewTab(root, id, site, pushTargets);
     wireBackupsPanel(root, id);
     loadBackupsPanel(root, id);
     if (showCrons) { wireCronsPanel(root, id); loadCronsPanel(root, id); }

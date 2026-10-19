@@ -1766,23 +1766,20 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// apiSitePush pushes a clone's files and/or database onto its parent site in
-// the background. The parent is backed up first and serves the maintenance
-// page while it is overwritten.
+// apiSitePush pushes a site's files and/or database onto its parent or one of
+// its own clones in the background. The target is backed up first and serves
+// the maintenance page while it is overwritten.
 func (h *Handler) apiSitePush(w http.ResponseWriter, r *http.Request) {
 
-	// resolve the source clone from the request path and ensure the user has access to it
+	// resolve the source site from the request path and ensure the user has access to it
 	src, ok := h.ResolveSite(w, r)
 	if !ok {
 		return
 	}
-	if src.ParentID == 0 {
-		apiutil.ErrorMsg(w, http.StatusBadRequest, "site is not a clone")
-		return
-	}
 
-	// define a struct to capture what to push and which paths to leave alone on the parent
+	// define a struct to capture the target, what to push, and which paths to leave alone on the target
 	var req struct {
+		TargetID int64    `json:"target_id"`
 		Files    bool     `json:"files"`
 		Database bool     `json:"database"`
 		Exclude  []string `json:"exclude"`
@@ -1804,32 +1801,48 @@ func (h *Handler) apiSitePush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// fetch the parent site the clone will be pushed onto
-	dst, err := db.GetSiteByID(h.DB, src.ParentID)
+	// an omitted target means the source's parent
+	targetID := req.TargetID
+	if targetID == 0 {
+		targetID = src.ParentID
+	}
+	if targetID == 0 || targetID == src.ID {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "no push target")
+		return
+	}
+
+	// fetch the site the source will be pushed onto
+	dst, err := db.GetSiteByID(h.DB, targetID)
 	if err != nil {
-		logger.Error("apiSitePush: failed to retrieve parent site %d: %v", src.ParentID, err)
+		logger.Error("apiSitePush: failed to retrieve target site %d: %v", targetID, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
 		return
 	}
 	if dst == nil {
-		apiutil.ErrorMsg(w, http.StatusNotFound, "parent site not found")
+		apiutil.ErrorMsg(w, http.StatusNotFound, "target site not found")
 		return
 	}
 
-	// ResolveSite only proved access to the clone; the parent is the site being
+	// a push only ever runs along a clone relationship, in either direction
+	if dst.ID != src.ParentID && dst.ParentID != src.ID {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "target must be this site's parent or one of its clones")
+		return
+	}
+
+	// ResolveSite only proved access to the source; the target is the site being
 	// overwritten, so ownership is enforced on it as well
 	user := auth.UserFromContext(r.Context())
 	if user.Role != models.RoleAdmin && dst.UID != user.ID {
-		logger.Error("apiSitePush: user %d does not own parent site %d", user.ID, dst.ID)
+		logger.Error("apiSitePush: user %d does not own target site %d", user.ID, dst.ID)
 		apiutil.ErrorMsg(w, http.StatusForbidden, "forbidden")
 		return
 	}
 	if dst.SiteType != src.SiteType {
-		apiutil.ErrorMsg(w, http.StatusBadRequest, "clone and parent site types differ")
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "source and target site types differ")
 		return
 	}
 	if src.SiteStatus != models.StatusRunning || dst.SiteStatus != models.StatusRunning {
-		apiutil.ErrorMsg(w, http.StatusConflict, "both the clone and its parent must be running")
+		apiutil.ErrorMsg(w, http.StatusConflict, "both sites must be running")
 		return
 	}
 

@@ -234,20 +234,27 @@ export function showRenameModal(currentName) {
     });
 }
 
-// showSyncModal prompts for what to push from a clone onto its parent and
-// resolves with { files, database, exclude }, or null if the user cancelled
-export function showSyncModal(cloneName, parentName, hasDB) {
+// showSyncModal prompts for a push target among the site's parent and clones,
+// and what to push onto it; resolves with { target_id, files, database,
+// exclude }, or null if the user cancelled
+export function showSyncModal(site, targets, hasDB) {
     return new Promise((resolve) => {
         const id = "kp-sync-modal";
+        const options = targets.map((t) =>
+            `<option value="${t.ID}">${t.Name} (${t.ParentID === site.ID ? "clone" : "parent"})</option>`
+        ).join("");
         const html = `
             <div id="${id}" uk-modal>
                 <div class="uk-modal-dialog kp-modal uk-modal-body" style="max-width:460px">
-                    <h3 class="uk-modal-title">Push To Parent</h3>
+                    <h3 class="uk-modal-title">Push Site</h3>
                     <p class="kp-muted uk-text-small uk-margin-small-bottom">
-                        This will overwrite the selected content on
-                        <strong>${parentName}</strong> with data from <strong>${cloneName}</strong>.
-                        <strong>${parentName}</strong> is backed up first, and the push is aborted if that backup fails.
+                        This will overwrite the selected content on the target with data from <strong>${site.Name}</strong>.
+                        The target is backed up first, and the push is aborted if that backup fails.
                     </p>
+                    <div class="uk-margin-small">
+                        <label class="uk-form-label kp-text" for="kp-sync-target">Push To</label>
+                        <select id="kp-sync-target" class="uk-select kp-select">${options}</select>
+                    </div>
                     <div class="uk-flex uk-margin-small" style="gap:16px">
                         <label><input class="uk-checkbox" type="checkbox" id="kp-sync-files" checked> &nbsp;Files</label>
                         ${hasDB ? `<label><input class="uk-checkbox" type="checkbox" id="kp-sync-db" checked> &nbsp;Database</label>` : ""}
@@ -258,12 +265,12 @@ export function showSyncModal(cloneName, parentName, hasDB) {
                     </div>
                     <p class="kp-muted uk-text-small" style="color:var(--kp-red, #e05c5c)">
                         <span uk-icon="icon: warning; ratio: 0.85"></span>
-                        <strong>${parentName}</strong> will be temporarily unavailable during the push.
+                        The target will be temporarily unavailable during the push.
                     </p>
                     <div class="uk-flex uk-flex-right uk-margin-top" style="gap:8px">
                         <button class="uk-button kp-btn-ghost uk-modal-close" id="kp-sync-cancel">Cancel</button>
                         <button class="uk-button kp-btn-primary" id="kp-sync-ok">
-                            <span uk-icon="cloud-upload"></span> Push To Parent
+                            <span uk-icon="cloud-upload"></span> Push Site
                         </button>
                     </div>
                 </div>
@@ -281,11 +288,12 @@ export function showSyncModal(cloneName, parentName, hasDB) {
         };
 
         okBtn.addEventListener("click", () => {
+            const target_id = parseInt(document.getElementById("kp-sync-target").value, 10);
             const files = document.getElementById("kp-sync-files").checked;
             const database = document.getElementById("kp-sync-db")?.checked ?? false;
             const exclude = document.getElementById("kp-sync-exclude").value
                 .split("\n").map((p) => p.trim()).filter(Boolean);
-            cleanup({ files, database, exclude });
+            cleanup({ target_id, files, database, exclude });
         }, { once: true });
         cancel.addEventListener("click", () => cleanup(null), { once: true });
         document.getElementById(id)
