@@ -675,8 +675,10 @@ func (m *Manager) loadDBDump(ctx context.Context, site *models.Site, src io.Read
 	return nil
 }
 
-// rewriteDBDump copies src to dst line by line, replacing USE / CREATE DATABASE
-// statements that reference any database name with the target database name
+// rewriteDBDump copies src to dst, replacing USE / CREATE DATABASE statements
+// that reference any database name with the target database name. Lines are
+// streamed in chunks, so a single statement of any length passes through
+// without being buffered whole.
 func rewriteDBDump(src io.Reader, dst io.Writer, targetDB string) error {
 
 	// patterns to match and rewrite — case-insensitive prefix checks
@@ -688,27 +690,73 @@ func rewriteDBDump(src io.Reader, dst io.Writer, targetDB string) error {
 		return fmt.Errorf("rewriteDBDump: write USE: %w", err)
 	}
 
-	scanner := bufio.NewScanner(src)
-	// increase the buffer for very long lines (e.g. large INSERT rows)
-	scanner.Buffer(make([]byte, 4*1024*1024), 4*1024*1024)
+	br := bufio.NewReaderSize(src, 64*1024)
+	bw := bufio.NewWriterSize(dst, 64*1024)
 
-	for scanner.Scan() {
-		line := scanner.Text()
-		lower := strings.ToLower(line)
+	// atLineStart marks the next chunk as the beginning of a line; skipRest
+	// drops the remainder of a line that has already been rewritten
+	atLineStart, skipRest := true, false
+	for {
+		chunk, err := br.ReadSlice('\n')
+		if len(chunk) > 0 {
 
-		if strings.HasPrefix(lower, usePrefix) {
-			// rewrite: USE `anything`; → USE `targetDB`;
-			line = fmt.Sprintf("USE `%s`;", targetDB)
-		} else if strings.HasPrefix(lower, createPrefix) {
-			// rewrite: CREATE DATABASE `anything` ... → CREATE DATABASE IF NOT EXISTS `targetDB`;
-			line = fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s`;", targetDB)
+			// only the head of a line decides whether it is rewritten
+			if atLineStart {
+				head := chunk
+				if len(head) > 64 {
+					head = head[:64]
+				}
+				lower := strings.ToLower(string(head))
+
+				switch {
+				case strings.HasPrefix(lower, usePrefix):
+					// rewrite: USE `anything`; → USE `targetDB`;
+					if _, werr := fmt.Fprintf(bw, "USE `%s`;\n", targetDB); werr != nil {
+						return fmt.Errorf("rewriteDBDump: write: %w", werr)
+					}
+					skipRest = true
+				case strings.HasPrefix(lower, createPrefix):
+					// rewrite: CREATE DATABASE `anything` ... → CREATE DATABASE IF NOT EXISTS `targetDB`;
+					if _, werr := fmt.Fprintf(bw, "CREATE DATABASE IF NOT EXISTS `%s`;\n", targetDB); werr != nil {
+						return fmt.Errorf("rewriteDBDump: write: %w", werr)
+					}
+					skipRest = true
+				default:
+					skipRest = false
+				}
+			}
+
+			if !skipRest {
+				if _, werr := bw.Write(chunk); werr != nil {
+					return fmt.Errorf("rewriteDBDump: write: %w", werr)
+				}
+			}
+
+			// a chunk ending in a newline closes the line; a full buffer does not
+			atLineStart = chunk[len(chunk)-1] == '\n'
 		}
 
-		if _, err := fmt.Fprintln(dst, line); err != nil {
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("rewriteDBDump: read: %w", err)
+		}
+	}
+
+	// terminate a final line that arrived without its newline
+	if !atLineStart && !skipRest {
+		if _, err := bw.WriteString("\n"); err != nil {
 			return fmt.Errorf("rewriteDBDump: write: %w", err)
 		}
 	}
-	return scanner.Err()
+	if err := bw.Flush(); err != nil {
+		return fmt.Errorf("rewriteDBDump: flush: %w", err)
+	}
+	return nil
 }
 
 // ensureWPCLI installs wp-cli into the PHP container if not already present
