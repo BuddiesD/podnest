@@ -1521,6 +1521,20 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 		logger.Warn("apiSiteClone: failed to add SFTP user for clone %d: %v", clone.ID, err)
 	}
 
+	// the SFTP user lives outside the site row's cascade — every failure from
+	// here until the response must remove it too
+	provisioned := false
+	defer func() {
+		if provisioned {
+			return
+		}
+		rbCtx, rbCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer rbCancel()
+		if err := h.SFTP.RemoveUser(rbCtx, clone.Name); err != nil {
+			logger.Warn("apiSiteClone: rollback: failed to remove SFTP user for clone %s: %v", clone.Name, err)
+		}
+	}()
+
 	// fetch all configuration key-value pairs for the source site from the database to be copied to the cloned site, returning an internal server error response if fetching fails
 	srcConfigs, err := db.GetAllConfigsBySite(h.DB, src.ID)
 	if err != nil {
@@ -1699,6 +1713,7 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 	h.Proxy.ObtainCert(domain)
 
 	// respond immediately — pod creation and DB clone run in the background
+	provisioned = true
 	apiutil.JSON(w, http.StatusAccepted, map[string]any{"id": clone.ID, "name": clone.Name})
 
 	// create the pod for the cloned site in a separate goroutine, ensuring it is created with the appropriate configurations and credentials, and handle any errors during pod creation by cleaning up the clone record and directory
@@ -1721,6 +1736,9 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 			rbCtx, rbCancel := context.WithTimeout(context.Background(), 5*time.Minute)
 			_ = h.Podman.StopPod(rbCtx, podman.PodName(clone.Name))
 			_ = h.Podman.RemoveSitePod(rbCtx, clone.Name)
+			if err := h.SFTP.RemoveUser(rbCtx, clone.Name); err != nil {
+				logger.Warn("apiSiteClone: rollback: failed to remove SFTP user for clone %s: %v", clone.Name, err)
+			}
 			rbCancel()
 			h.Proxy.RemoveDomains([]string{domain})
 			h.Proxy.ForgetSite(clone.ID, clone.Port)
