@@ -306,7 +306,7 @@ export async function viewSiteDetail(root, { id, tab }) {
     const allSites = Array.isArray(rawSites) ? rawSites : [];
     const showPHP = site.SiteType === 1 || site.SiteType === 2;
     const isRP = site.SiteType === 6;
-    const showCrons = [1, 2, 4, 5].includes(site.SiteType);
+    const showCrons = [1, 2, 4, 5, 7].includes(site.SiteType);
     const hasDB = [1, 2, 4, 5, 7].includes(site.SiteType);
 
     // reset the shared listener abort before the waf/routes wiring attaches
