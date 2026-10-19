@@ -43,6 +43,7 @@ type Manager struct {
 	restoring   sync.Map    // map[int64]bool
 	importErrs  sync.Map    // map[int64]string — last import failure per site
 	backupJobs  sync.Map    // map[int64]backupJob
+	pushJobs    sync.Map    // map[int64]backupJob — last push per source site
 	jobs        sync.WaitGroup
 	jobCtx      context.Context
 	jobCancel   context.CancelFunc

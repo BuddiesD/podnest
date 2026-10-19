@@ -5,7 +5,7 @@
 "use strict";
 
 import { api } from '../api.js';
-import { confirm, showSyncModal, siteTypeLabel, statusBadge, versionLabel } from '../helpers.js';
+import { confirm, hideProgressModal, showProgressModal, showSyncModal, siteTypeLabel, statusBadge, versionLabel } from '../helpers.js';
 import { router } from '../router.js';
 import { toast } from '../toast.js';
 
@@ -59,12 +59,9 @@ export function renderOverviewTab(site, domains, sftp, parentID = 0, parentName 
                 <div class="kp-card uk-padding-small uk-margin-small-top">
                     <h3 class="kp-view-title uk-margin-bottom">Site Sync</h3>
                     <p class="kp-muted uk-text-small uk-margin-remove-bottom">
-                        Sync files and database between this clone and its parent site.
+                        Push files and/or database from this clone onto its parent site.
                     </p>
                     <div class="uk-flex uk-margin-small-top" style="gap:8px">
-                        <button class="uk-button kp-btn-secondary kp-btn-sm" id="sync-pull-btn">
-                            <span uk-icon="cloud-download"></span> Pull From Parent
-                        </button>
                         <button class="uk-button kp-btn-secondary kp-btn-sm" id="sync-push-btn">
                             <span uk-icon="cloud-upload"></span> Push To Parent
                         </button>
@@ -294,16 +291,39 @@ export function wireOverviewTab(root, siteId, site = null) {
         }
     });
 
-    // wire Site Sync pull/push buttons — only present on clone sites (ParentID > 0)
-    root.querySelector('#sync-pull-btn')?.addEventListener('click', async () => {
-        const ok = await showSyncModal('pull', site.Name, root.querySelector('[data-action="manage"][data-id="' + site.ParentID + '"]')?.textContent?.trim() ?? 'parent');
-        if (!ok) return;
+    // wire Site Sync push button — only present on clone sites (ParentID > 0)
+    root.querySelector('#sync-push-btn')?.addEventListener('click', async () => {
+        const parentName = root.querySelector('[data-action="manage"][data-id="' + site.ParentID + '"]')?.textContent?.trim() ?? 'parent';
+        const opts = await showSyncModal(site.Name, parentName, site.SiteType !== 3 && site.PMAPort > 0);
+        if (!opts) return;
         try {
-            //await api.post(`/sites/${siteId}/sync/pull`);
-            toast.success('Pull from parent complete');
+            await api.post(`/sites/${siteId}/push`, opts);
         } catch (e) {
             toast.error(e.message);
+            return;
         }
+
+        showProgressModal('Push Running', `Backing up ${parentName}, then pushing ${site.Name} onto it.`);
+
+        // poll the job status every 4 seconds until it finishes, or 30 min timeout
+        const deadline = Date.now() + 30 * 60 * 1000;
+        const poll = setInterval(async () => {
+            try {
+                const res = await api.get(`/sites/${siteId}/push-status`);
+                if (!res?.active || Date.now() > deadline) {
+                    clearInterval(poll);
+                    hideProgressModal();
+                    if (res?.active) {
+                        // push is still running in the background — check logs
+                        toast.error('Push is taking longer than expected — check server logs for status');
+                    } else if (res?.error) {
+                        toast.error(`Push failed: ${res.error}`);
+                    } else {
+                        toast.success('Push to parent complete');
+                    }
+                }
+            } catch (_) { /* keep polling on transient errors */ }
+        }, 4000);
     });
 
     root.querySelector('#sync-push-btn')?.addEventListener('click', async () => {

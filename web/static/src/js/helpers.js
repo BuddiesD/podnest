@@ -224,33 +224,36 @@ export function showRenameModal(currentName) {
     });
 }
 
-// showSyncModal prompts the user to confirm a destructive Pull or Push sync
-// operation between a clone and its parent site
-export function showSyncModal(direction, cloneName, parentName) {
+// showSyncModal prompts for what to push from a clone onto its parent and
+// resolves with { files, database, exclude }, or null if the user cancelled
+export function showSyncModal(cloneName, parentName, hasDB) {
     return new Promise((resolve) => {
         const id = "kp-sync-modal";
-        const isPull = direction === "pull";
-        const title = isPull ? "Pull From Parent" : "Push To Parent";
-        const icon = isPull ? "cloud-download" : "cloud-upload";
-        const srcName = isPull ? parentName : cloneName;
-        const dstName = isPull ? cloneName : parentName;
         const html = `
             <div id="${id}" uk-modal>
                 <div class="uk-modal-dialog kp-modal uk-modal-body" style="max-width:460px">
-                    <h3 class="uk-modal-title">${title}</h3>
+                    <h3 class="uk-modal-title">Push To Parent</h3>
                     <p class="kp-muted uk-text-small uk-margin-small-bottom">
-                        This will overwrite all files and database content on
-                        <strong>${dstName}</strong> with data from <strong>${srcName}</strong>.
-                        This action cannot be undone.
+                        This will overwrite the selected content on
+                        <strong>${parentName}</strong> with data from <strong>${cloneName}</strong>.
+                        <strong>${parentName}</strong> is backed up first, and the push is aborted if that backup fails.
                     </p>
+                    <div class="uk-flex uk-margin-small" style="gap:16px">
+                        <label><input class="uk-checkbox" type="checkbox" id="kp-sync-files" checked> &nbsp;Files</label>
+                        ${hasDB ? `<label><input class="uk-checkbox" type="checkbox" id="kp-sync-db" checked> &nbsp;Database</label>` : ""}
+                    </div>
+                    <div class="uk-margin-small">
+                        <label class="uk-form-label kp-text" for="kp-sync-exclude">Exclude Paths (one per line, relative to the web root)</label>
+                        <textarea class="uk-textarea kp-textarea" id="kp-sync-exclude" rows="3" placeholder="wp-content/uploads"></textarea>
+                    </div>
                     <p class="kp-muted uk-text-small" style="color:var(--kp-red, #e05c5c)">
                         <span uk-icon="icon: warning; ratio: 0.85"></span>
-                        <strong>${dstName}</strong> will be temporarily unavailable during the sync.
+                        <strong>${parentName}</strong> will be temporarily unavailable during the push.
                     </p>
                     <div class="uk-flex uk-flex-right uk-margin-top" style="gap:8px">
                         <button class="uk-button kp-btn-ghost uk-modal-close" id="kp-sync-cancel">Cancel</button>
                         <button class="uk-button kp-btn-primary" id="kp-sync-ok">
-                            <span uk-icon="${icon}"></span> ${title}
+                            <span uk-icon="cloud-upload"></span> Push To Parent
                         </button>
                     </div>
                 </div>
@@ -267,10 +270,16 @@ export function showSyncModal(direction, cloneName, parentName) {
             resolve(val);
         };
 
-        okBtn.addEventListener("click", () => cleanup(true), { once: true });
-        cancel.addEventListener("click", () => cleanup(false), { once: true });
+        okBtn.addEventListener("click", () => {
+            const files = document.getElementById("kp-sync-files").checked;
+            const database = document.getElementById("kp-sync-db")?.checked ?? false;
+            const exclude = document.getElementById("kp-sync-exclude").value
+                .split("\n").map((p) => p.trim()).filter(Boolean);
+            cleanup({ files, database, exclude });
+        }, { once: true });
+        cancel.addEventListener("click", () => cleanup(null), { once: true });
         document.getElementById(id)
-            .addEventListener("hidden", () => cleanup(false), { once: true });
+            .addEventListener("hidden", () => cleanup(null), { once: true });
 
         modal.show();
     });

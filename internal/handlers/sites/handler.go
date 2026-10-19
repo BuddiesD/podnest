@@ -94,6 +94,8 @@ func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 	// image pruning is system-wide, not scoped to a single site — admin only
 	api.Handle("POST /sites/prune-images", auth.RequireAPIAdmin(http.HandlerFunc(h.apiPruneImages)))
 	api.HandleFunc("POST /sites/{id}/clone", h.apiSiteClone)
+	api.HandleFunc("POST /sites/{id}/push", h.apiSitePush)
+	api.HandleFunc("GET /sites/{id}/push-status", h.apiSitePushStatus)
 	api.HandleFunc("POST /sites/{id}/rename", h.apiRenameSite)
 }
 
@@ -1684,4 +1686,104 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 		logger.Debug("apiSiteClone: clone '%s' created from source '%s'", clone.Name, src.Name)
 		_ = db.UpdateSiteStatus(h.DB, clone.ID, models.StatusRunning)
 	})
+}
+
+// apiSitePush pushes a clone's files and/or database onto its parent site in
+// the background. The parent is backed up first and serves the maintenance
+// page while it is overwritten.
+func (h *Handler) apiSitePush(w http.ResponseWriter, r *http.Request) {
+
+	// resolve the source clone from the request path and ensure the user has access to it
+	src, ok := h.ResolveSite(w, r)
+	if !ok {
+		return
+	}
+	if src.ParentID == 0 {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "site is not a clone")
+		return
+	}
+
+	// define a struct to capture what to push and which paths to leave alone on the parent
+	var req struct {
+		Files    bool     `json:"files"`
+		Database bool     `json:"database"`
+		Exclude  []string `json:"exclude"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apiutil.Error(w, http.StatusBadRequest, err)
+		return
+	}
+	if !req.Files && !(req.Database && modules.TypeModule(src.SiteType).HasDatabase()) {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "nothing selected to push")
+		return
+	}
+
+	// validate the exclusions before they reach the wipe or the copy
+	exclude, err := backup.CleanPushExcludes(req.Exclude)
+	if err != nil {
+		logger.Error("apiSitePush: invalid exclusions for site %d: %v", src.ID, err)
+		apiutil.Error(w, http.StatusBadRequest, err)
+		return
+	}
+
+	// fetch the parent site the clone will be pushed onto
+	dst, err := db.GetSiteByID(h.DB, src.ParentID)
+	if err != nil {
+		logger.Error("apiSitePush: failed to retrieve parent site %d: %v", src.ParentID, err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	if dst == nil {
+		apiutil.ErrorMsg(w, http.StatusNotFound, "parent site not found")
+		return
+	}
+
+	// ResolveSite only proved access to the clone; the parent is the site being
+	// overwritten, so ownership is enforced on it as well
+	user := auth.UserFromContext(r.Context())
+	if user.Role != models.RoleAdmin && dst.UID != user.ID {
+		logger.Error("apiSitePush: user %d does not own parent site %d", user.ID, dst.ID)
+		apiutil.ErrorMsg(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	if dst.SiteType != src.SiteType {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "clone and parent site types differ")
+		return
+	}
+	if src.SiteStatus != models.StatusRunning || dst.SiteStatus != models.StatusRunning {
+		apiutil.ErrorMsg(w, http.StatusConflict, "both the clone and its parent must be running")
+		return
+	}
+
+	// claim both sites, refusing while either has another job running
+	if err := h.Backup.BeginPush(src.ID, dst.ID); err != nil {
+		apiutil.ErrorMsg(w, http.StatusConflict, err.Error())
+		return
+	}
+
+	// run the push in the background; the outcome is reported through push-status
+	opts := backup.PushOptions{Files: req.Files, Database: req.Database, Exclude: exclude}
+	h.Backup.Go(func(jobCtx context.Context) {
+		err := h.Backup.Push(jobCtx, src, dst, opts)
+		h.Backup.EndPush(src.ID, dst.ID, err)
+		if err != nil {
+			logger.Error("apiSitePush: push '%s' → '%s': %v", src.Name, dst.Name, err)
+			return
+		}
+		logger.Debug("apiSitePush: pushed '%s' onto '%s'", src.Name, dst.Name)
+	})
+
+	logger.Debug("apiSitePush: queued push '%s' → '%s'", src.Name, dst.Name)
+	apiutil.JSON(w, http.StatusAccepted, map[string]string{"status": "push started"})
+}
+
+// apiSitePushStatus reports whether a push from this clone is running and the
+// error from the last one, if it failed.
+func (h *Handler) apiSitePushStatus(w http.ResponseWriter, r *http.Request) {
+	site, ok := h.ResolveSite(w, r)
+	if !ok {
+		return
+	}
+	active, errMsg := h.Backup.PushJobStatus(site.ID)
+	apiutil.JSON(w, http.StatusOK, map[string]any{"active": active, "error": errMsg})
 }
