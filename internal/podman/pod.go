@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"podnest/internal/logger"
 	"podnest/internal/models"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -65,22 +66,23 @@ type NetworkNamespace struct {
 
 // ContainerSpec defines the configuration for creating a new container within a pod, including image, environment variables, mounts, capabilities, and command
 type ContainerSpec struct {
-	Name         string             `json:"name"`
-	Image        string             `json:"image"`
-	Pod          string             `json:"pod"`
-	Env          map[string]string  `json:"env"`
-	Mounts       []Mount            `json:"mounts"`
-	PortMappings []PortMap          `json:"portmappings,omitempty"`
-	CapAdd       []string           `json:"cap_add"`
-	CapDrop      []string           `json:"cap_drop"`
-	SecOpts      []string           `json:"security_opt"`
-	Entrypoint   []string           `json:"entrypoint,omitempty"`
-	Command      []string           `json:"command,omitempty"`
-	ReadOnlyFS   bool               `json:"read_only_filesystem,omitempty"`
-	WorkingDir   string             `json:"work_dir,omitempty"`
-	User         string             `json:"user,omitempty"`
-	NetNS        NetworkNamespace   `json:"netns,omitempty"`
-	Healthcheck  *HealthcheckConfig `json:"healthconfig,omitempty"`
+	Name           string             `json:"name"`
+	Image          string             `json:"image"`
+	Pod            string             `json:"pod"`
+	Env            map[string]string  `json:"env"`
+	Mounts         []Mount            `json:"mounts"`
+	PortMappings   []PortMap          `json:"portmappings,omitempty"`
+	CapAdd         []string           `json:"cap_add"`
+	CapDrop        []string           `json:"cap_drop"`
+	SecOpts        []string           `json:"security_opt"`
+	Entrypoint     []string           `json:"entrypoint,omitempty"`
+	Command        []string           `json:"command,omitempty"`
+	ReadOnlyFS     bool               `json:"read_only_filesystem,omitempty"`
+	WorkingDir     string             `json:"work_dir,omitempty"`
+	User           string             `json:"user,omitempty"`
+	NetNS          NetworkNamespace   `json:"netns,omitempty"`
+	Healthcheck    *HealthcheckConfig `json:"healthconfig,omitempty"`
+	ResourceLimits *ResourceLimits    `json:"resource_limits,omitempty"`
 }
 
 // Mount represents a bind mount or volume mount for a container, specifying the source path on the host, the destination path in the container, the type of mount, and any additional options
@@ -95,6 +97,25 @@ type Mount struct {
 // ever sends ["NONE"] to disable any check defined by the image.
 type HealthcheckConfig struct {
 	Test []string `json:"Test"`
+}
+
+// ResourceLimits caps a container's memory and CPU through libpod's spec generator
+type ResourceLimits struct {
+	Memory *MemoryLimit `json:"memory,omitempty"`
+	CPU    *CPULimit    `json:"cpu,omitempty"`
+}
+
+// MemoryLimit holds the memory cap in bytes; Swap is memory plus swap, so
+// setting it equal to Limit leaves the container no swap to spill into
+type MemoryLimit struct {
+	Limit int64 `json:"limit"`
+	Swap  int64 `json:"swap"`
+}
+
+// CPULimit expresses a CPU cap as a CFS quota over a period, both in microseconds
+type CPULimit struct {
+	Quota  int64  `json:"quota"`
+	Period uint64 `json:"period"`
 }
 
 // ContainerCreateResponse represents the response from the container creation endpoint, containing the new container's ID
@@ -365,6 +386,45 @@ func (c *Client) RemoveContainer(ctx context.Context, name string) error {
 	// log the successful removal of the container with its name and return nil to indicate success
 	logger.Debug("removed container %s", name)
 	return nil
+}
+
+// WaitContainer blocks until the named container exits and returns its exit code;
+// it runs on the stream client so long-running containers are not cut off by the
+// 120s request deadline
+func (c *Client) WaitContainer(ctx context.Context, name string) (int, error) {
+	body, err := c.StreamPost(ctx, "/v4.0.0/libpod/containers/"+name+"/wait?condition=exited", nil)
+	if err != nil {
+		logger.Error("failed to wait on container %s: %v", name, err)
+		return -1, err
+	}
+	defer body.Close()
+
+	b, err := io.ReadAll(body)
+	if err != nil {
+		logger.Error("failed to read wait response for container %s: %v", name, err)
+		return -1, err
+	}
+
+	code, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	if err != nil {
+		logger.Error("unexpected wait response for container %s: %q", name, string(b))
+		return -1, fmt.Errorf("unexpected wait response for container %s: %w", name, err)
+	}
+
+	logger.Debug("container %s exited %d", name, code)
+	return code, nil
+}
+
+// ContainerOutput returns everything a stopped container wrote to stdout and stderr
+func (c *Client) ContainerOutput(ctx context.Context, name string) (stdout, stderr []byte, err error) {
+	body, err := c.stream(ctx, "/v4.0.0/libpod/containers/"+name+"/logs?stdout=true&stderr=true")
+	if err != nil {
+		logger.Error("failed to read output of container %s: %v", name, err)
+		return nil, nil, err
+	}
+	defer body.Close()
+
+	return demuxStream(body)
 }
 
 // PullImage pulls a container image only if the local digest differs from the

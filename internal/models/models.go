@@ -14,11 +14,12 @@ import (
 // container image references — single source of truth for all image URLs
 const (
 
-	// from GitHub Container Registry (kpirnie's repos)
+	// from GitHub Container Registry (Kevin's repos)
 	ImgNginx    = "ghcr.io/kpirnie/nginx:latest"
 	ImgSFTP     = "ghcr.io/kpirnie/sftp:latest"
 	ImgPHPBase  = "ghcr.io/kpirnie/php:"
 	ImgFail2Ban = "ghcr.io/kpirnie/fail2ban:latest"
+	ImgMalscan  = "ghcr.io/kpirnie/malscan:latest"
 
 	// from Docker Hub library
 	ImgDB      = "docker.io/library/mariadb:latest"
