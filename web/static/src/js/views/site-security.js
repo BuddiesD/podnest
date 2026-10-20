@@ -226,8 +226,8 @@ export function renderSecurityPanel(siteId = null) {
                             </div>
                         </div>
                         <p class="kp-muted uk-text-small uk-margin-small-bottom">
-                            The site's html directory is scanned nightly at midnight with ClamAV, Linux Malware Detect,
-                            and php-malware-finder rules. Findings are reported only — quarantine moves a file out of
+                            The site's html directory is scanned nightly at midnight with ClamAV and Linux Malware Detect.
+                            Findings are reported only — quarantine moves a file out of
                             the site and out of SFTP reach. History is kept for <span id="sec-malware-retain">30</span> days.
                         </p>
                         <div id="sec-malware-list">
