@@ -938,30 +938,6 @@
                     </div>
                 </li>
 
-                ${e?`
-                <!-- malware scans -->
-                <li>
-                    <div class="kp-card uk-padding-small">
-                        <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
-                            <h3 class="kp-view-title">Malware Scans</h3>
-                            <div class="uk-flex" style="gap:8px">
-                                <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-malware-scan" uk-tooltip="Scan this site now" disabled>
-                                    <span uk-icon="search"></span>
-                                </button>
-                            </div>
-                        </div>
-                        <p class="kp-muted uk-text-small uk-margin-small-bottom">
-                            The site's html directory is scanned nightly at midnight with ClamAV, Linux Malware Detect,
-                            and php-malware-finder rules. Findings are reported only \u2014 quarantine moves a file out of
-                            the site and out of SFTP reach. History is kept for <span id="sec-malware-retain">30</span> days.
-                        </p>
-                        <div id="sec-malware-list">
-                            <div uk-spinner="ratio: 0.6"></div>
-                        </div>
-                    </div>
-                </li>
-                `:""}
-
                 <!-- user-agent rules -->
                 <li>
                     <div class="kp-card uk-padding-small">
@@ -1084,6 +1060,30 @@
                         </div>
                     </div>
                 </li>
+
+                ${e?`
+                <!-- malware scans -->
+                <li>
+                    <div class="kp-card uk-padding-small">
+                        <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                            <h3 class="kp-view-title">Malware Scans</h3>
+                            <div class="uk-flex" style="gap:8px">
+                                <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-malware-scan" uk-tooltip="Scan this site now" disabled>
+                                    <span uk-icon="search"></span>
+                                </button>
+                            </div>
+                        </div>
+                        <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                            The site's html directory is scanned nightly at midnight with ClamAV, Linux Malware Detect,
+                            and php-malware-finder rules. Findings are reported only \u2014 quarantine moves a file out of
+                            the site and out of SFTP reach. History is kept for <span id="sec-malware-retain">30</span> days.
+                        </p>
+                        <div id="sec-malware-list">
+                            <div uk-spinner="ratio: 0.6"></div>
+                        </div>
+                    </div>
+                </li>
+                `:""}
 
                 ${e?"":`
                 <!-- trusted proxy ranges -->
@@ -1316,55 +1316,6 @@ ${r}`:r),a.hide(),c.success(`${r} added to blacklist \u2014 save to apply`)})}ca
                 </form>
             </div>
         </li>
-        
-        <!-- malware: scan history retention + scanner resource caps -->
-        <li>
-            <div class="kp-card uk-padding">
-                <div class="uk-flex uk-flex-right uk-margin-bottom">
-                    ${pe("malware")}
-                </div>
-                <form id="malware-form" class="uk-form-stacked">
-                    <p class="kp-muted uk-text-small uk-margin-bottom">
-                        Every site's html directory is scanned nightly at midnight with ClamAV, Linux Malware Detect,
-                        and php-malware-finder rules. Scans run one site at a time in a throwaway container.
-                    </p>
-                    <div class="uk-grid-small uk-child-width-1-3@m" uk-grid>
-                        <div>
-                            <label class="kp-label" for="malware-retain-days">Retain History (days)</label>
-                            <input class="uk-input kp-input" id="malware-retain-days" name="malware_retain_days" type="number"
-                                min="1" max="3650" step="1" placeholder="30"
-                                value="${o.malware_retain_days||"30"}">
-                            <p class="kp-muted uk-text-small uk-margin-small-top">
-                                Scan results older than this are pruned after each nightly run.
-                            </p>
-                        </div>
-                        <div>
-                            <label class="kp-label" for="malware-memory-mb">Scanner Memory (MB)</label>
-                            <input class="uk-input kp-input" id="malware-memory-mb" name="malware_memory_mb" type="number"
-                                min="512" max="65536" step="1" placeholder="2048"
-                                value="${o.malware_memory_mb||"2048"}">
-                            <p class="kp-muted uk-text-small uk-margin-small-top">
-                                ClamAV's signature set alone needs over 1 GB; too low and scans fail out of memory.
-                            </p>
-                        </div>
-                        <div>
-                            <label class="kp-label" for="malware-cpus">Scanner CPUs</label>
-                            <input class="uk-input kp-input" id="malware-cpus" name="malware_cpus" type="number"
-                                min="0.1" max="64" step="0.1" placeholder="1"
-                                value="${o.malware_cpus||"1"}">
-                            <p class="kp-muted uk-text-small uk-margin-small-top">
-                                CPU cores the scanner may use. Fractions are allowed (e.g. 0.5).
-                            </p>
-                        </div>
-                    </div>
-                    <div class="uk-flex uk-flex-right uk-margin-top">
-                        <button type="submit" class="uk-button kp-btn-primary">
-                            <span uk-icon="check"></span> Save Settings
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </li>
 
         <!-- backups: schedule/retention + S3 storage -->
         <li>
@@ -1551,6 +1502,55 @@ ${r}`:r),a.hide(),c.success(`${r} added to blacklist \u2014 save to apply`)})}ca
                                     Alphanumeric sender name shown on the recipient's phone. Supported in select AWS regions only.
                                 </p>
                             </div>
+                        </div>
+                    </div>
+                    <div class="uk-flex uk-flex-right uk-margin-top">
+                        <button type="submit" class="uk-button kp-btn-primary">
+                            <span uk-icon="check"></span> Save Settings
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </li>
+
+        <!-- malware: scan history retention + scanner resource caps -->
+        <li>
+            <div class="kp-card uk-padding">
+                <div class="uk-flex uk-flex-right uk-margin-bottom">
+                    ${pe("malware")}
+                </div>
+                <form id="malware-form" class="uk-form-stacked">
+                    <p class="kp-muted uk-text-small uk-margin-bottom">
+                        Every site's html directory is scanned nightly at midnight with ClamAV, Linux Malware Detect,
+                        and php-malware-finder rules. Scans run one site at a time in a throwaway container.
+                    </p>
+                    <div class="uk-grid-small uk-child-width-1-3@m" uk-grid>
+                        <div>
+                            <label class="kp-label" for="malware-retain-days">Retain History (days)</label>
+                            <input class="uk-input kp-input" id="malware-retain-days" name="malware_retain_days" type="number"
+                                min="1" max="3650" step="1" placeholder="30"
+                                value="${o.malware_retain_days||"30"}">
+                            <p class="kp-muted uk-text-small uk-margin-small-top">
+                                Scan results older than this are pruned after each nightly run.
+                            </p>
+                        </div>
+                        <div>
+                            <label class="kp-label" for="malware-memory-mb">Scanner Memory (MB)</label>
+                            <input class="uk-input kp-input" id="malware-memory-mb" name="malware_memory_mb" type="number"
+                                min="512" max="65536" step="1" placeholder="2048"
+                                value="${o.malware_memory_mb||"2048"}">
+                            <p class="kp-muted uk-text-small uk-margin-small-top">
+                                ClamAV's signature set alone needs over 1 GB; too low and scans fail out of memory.
+                            </p>
+                        </div>
+                        <div>
+                            <label class="kp-label" for="malware-cpus">Scanner CPUs</label>
+                            <input class="uk-input kp-input" id="malware-cpus" name="malware_cpus" type="number"
+                                min="0.1" max="64" step="0.1" placeholder="1"
+                                value="${o.malware_cpus||"1"}">
+                            <p class="kp-muted uk-text-small uk-margin-small-top">
+                                CPU cores the scanner may use. Fractions are allowed (e.g. 0.5).
+                            </p>
                         </div>
                     </div>
                     <div class="uk-flex uk-flex-right uk-margin-top">
