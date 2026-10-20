@@ -11036,6 +11036,102 @@
           "description": "TODO: document request body."
         }
       }
+    },
+    "/settings/malware": {
+      "get": {
+        "tags": ["Settings"],
+        "summary": "Get malware scan settings",
+        "description": "Returns malware_retain_days, malware_memory_mb, and malware_cpus. Empty values mean the defaults (30 days, 2048 MB, 1 CPU) apply. Admin only.",
+        "operationId": "get_settings_malware",
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "put": {
+        "tags": ["Settings"],
+        "summary": "Update malware scan settings",
+        "description": "Validates every value before saving any. Bounds: malware_retain_days 1-3650, malware_memory_mb 512-65536 (whole numbers), malware_cpus 0.1-64. Admin only.",
+        "operationId": "put_settings_malware",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "malware_retain_days": { "type": "string", "example": "30" },
+                  "malware_memory_mb": { "type": "string", "example": "2048" },
+                  "malware_cpus": { "type": "string", "example": "1" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/sites/{id}/malware": {
+      "get": {
+        "tags": ["Security"],
+        "summary": "List malware scans",
+        "description": "Returns the site's scan history newest first, each scan with its findings, plus whether the site has an html directory to scan and the retention window in days. Status: 1 running, 2 clean, 3 infected, 4 error.",
+        "operationId": "get_sites_id_malware",
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Site ID.", "schema": { "type": "string" } }
+        ]
+      }
+    },
+    "/sites/{id}/malware/scan": {
+      "post": {
+        "tags": ["Security"],
+        "summary": "Scan a site for malware now",
+        "description": "Queues an immediate scan and returns its ID without waiting. Scans run one at a time host-wide.",
+        "operationId": "post_sites_id_malware_scan",
+        "responses": {
+          "202": { "description": "Scan queued", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Site has no html directory", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "A scan is already queued or running for this site", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Site ID.", "schema": { "type": "string" } }
+        ]
+      }
+    },
+    "/sites/{id}/malware/findings/{findingID}/quarantine": {
+      "post": {
+        "tags": ["Security"],
+        "summary": "Quarantine a malware finding",
+        "description": "Moves the finding's file out of the site's html directory into the panel-only quarantine store and marks every finding for that path as quarantined.",
+        "operationId": "post_sites_id_malware_findings_findingid_quarantine",
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Finding or file not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "File is already quarantined", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Site ID.", "schema": { "type": "string" } },
+          { "name": "findingID", "in": "path", "required": true, "description": "Malware finding ID.", "schema": { "type": "string" } }
+        ]
+      }
     }
   }
 }
