@@ -8,8 +8,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"podnest/internal/apiutil"
@@ -60,6 +62,17 @@ var settingGroups = map[string][]string{
 		"smtp_host", "smtp_port", "smtp_username", "smtp_password", "smtp_from", "smtp_tls",
 		"aws_access_key", "aws_secret_key", "aws_region", "aws_sns_sender_id",
 	},
+	"malware": {
+		"malware_retain_days", "malware_memory_mb", "malware_cpus",
+	},
+}
+
+// malwareSettingBounds holds each malware setting's allowed range; the caps exist
+// to protect the host, so a typo must not be able to lift or zero them
+var malwareSettingBounds = map[string][2]float64{
+	"malware_retain_days": {1, 3650},
+	"malware_memory_mb":   {512, 65536},
+	"malware_cpus":        {0.1, 64},
 }
 
 // RegisterRoutes mounts settings and trusted proxy routes onto api.
@@ -83,6 +96,8 @@ func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 	api.Handle("GET /settings/resource-warning", admin(h.apiGetResourceWarning))
 	api.Handle("GET /settings/resources", admin(h.apiGetResourceSettings))
 	api.Handle("PUT /settings/resources", admin(h.apiUpdateResourceSettings))
+	api.Handle("GET /settings/malware", admin(h.apiGetMalwareSettings))
+	api.Handle("PUT /settings/malware", admin(h.apiUpdateMalwareSettings))
 }
 
 func (h *Handler) apiGetSettings(w http.ResponseWriter, r *http.Request) {
@@ -403,6 +418,63 @@ func (h *Handler) apiUpdateResourceSettings(w http.ResponseWriter, r *http.Reque
 	}
 
 	logger.Debug("apiUpdateResourceSettings: updated resource watcher settings")
+	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) apiGetMalwareSettings(w http.ResponseWriter, r *http.Request) {
+	keys := []string{"malware_retain_days", "malware_memory_mb", "malware_cpus"}
+	out := make(map[string]string, len(keys))
+	for _, k := range keys {
+		val, err := db.GetSetting(h.DB, k)
+		if err != nil {
+			logger.Error("apiGetMalwareSettings: failed to retrieve '%s': %v", k, err)
+			apiutil.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+		out[k] = val
+	}
+	logger.Debug("apiGetMalwareSettings: retrieved malware scan settings")
+	apiutil.JSON(w, http.StatusOK, out)
+}
+
+func (h *Handler) apiUpdateMalwareSettings(w http.ResponseWriter, r *http.Request) {
+	var incoming map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&incoming); err != nil {
+		logger.Error("apiUpdateMalwareSettings: decode: %v", err)
+		apiutil.Error(w, http.StatusBadRequest, err)
+		return
+	}
+
+	// validate everything before persisting anything so a bad value saves nothing
+	clean := make(map[string]string, len(incoming))
+	for k, v := range incoming {
+		b, ok := malwareSettingBounds[k]
+		if !ok {
+			logger.Warn("apiUpdateMalwareSettings: rejected unknown key '%s'", k)
+			continue
+		}
+		v = strings.TrimSpace(v)
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil || f < b[0] || f > b[1] {
+			apiutil.ErrorMsg(w, http.StatusBadRequest, fmt.Sprintf("%s must be between %g and %g", k, b[0], b[1]))
+			return
+		}
+		if k != "malware_cpus" && f != math.Trunc(f) {
+			apiutil.ErrorMsg(w, http.StatusBadRequest, fmt.Sprintf("%s must be a whole number", k))
+			return
+		}
+		clean[k] = v
+	}
+
+	for k, v := range clean {
+		if err := db.SetSetting(h.DB, k, v); err != nil {
+			logger.Error("apiUpdateMalwareSettings: persist '%s': %v", k, err)
+			apiutil.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+
+	logger.Debug("apiUpdateMalwareSettings: updated malware scan settings")
 	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
