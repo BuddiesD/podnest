@@ -40,6 +40,7 @@ const apiMaxBodyBytes = 16 << 20 // 16 MB
 var apiBodyLimitSkipSuffixes = []string{
 	"/files/upload",
 	"/backups/import/upload",
+	"/db/import/upload",
 }
 
 // limitAPIBody bounds the request body for every API route that does not

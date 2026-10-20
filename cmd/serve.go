@@ -20,6 +20,7 @@ import (
 	"podnest/internal/modules/features/backups"
 	"podnest/internal/modules/features/basicauth"
 	"podnest/internal/modules/features/crons"
+	"podnest/internal/modules/features/dbtools"
 	"podnest/internal/modules/features/files"
 	sftpfeature "podnest/internal/modules/features/sftp"
 	"podnest/internal/modules/features/stats"
@@ -150,6 +151,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// register the backups
 	modules.RegisterFeature(backups.Module{
 		DB:      database,
+		Manager: backupMgr,
+	})
+
+	// register the database tools module
+	modules.RegisterFeature(dbtools.Module{
 		Manager: backupMgr,
 	})
 

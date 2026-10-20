@@ -312,11 +312,11 @@ func (m *Manager) backupDB(ctx context.Context, site *models.Site, repoPath stri
 	dumpCmd := exec.CommandContext(ctx, "podman",
 		"exec", "--user=mysql", "-e", "MYSQL_PWD", dbContainer,
 		"sh", "-c",
-		fmt.Sprintf(
-			"mysqldump -uroot --single-transaction --quick --routines %s 2>/dev/null || "+
-				"mariadb-dump -uroot --single-transaction --quick --routines %s",
-			dbName, dbName,
-		),
+		// the schema name is a positional arg, never interpolated into the script
+		`mysqldump -uroot --single-transaction --quick --routines "$1" 2>/dev/null || `+
+			`mariadb-dump -uroot --single-transaction --quick --routines "$1"`,
+		"sh",
+		dbName,
 	)
 	// MYSQL_PWD passed via -e (name only) so the password is in neither the host
 	// nor the container process list (it lives only in this command's env)
@@ -549,7 +549,10 @@ func (m *Manager) restoreDB(ctx context.Context, site *models.Site, repoPath str
 	mysqlCmd := exec.CommandContext(ctx, "podman",
 		"exec", "-e", "MYSQL_PWD", dbContainer,
 		"sh", "-c",
-		fmt.Sprintf("mariadb -uroot %s < /tmp/podnest-restore.sql && rm /tmp/podnest-restore.sql", dbName),
+		// the schema name is a positional arg, never interpolated into the script
+		`mariadb -uroot "$1" < /tmp/podnest-restore.sql && rm /tmp/podnest-restore.sql`,
+		"sh",
+		dbName,
 	)
 	mysqlCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock, "MYSQL_PWD="+rootPass)
 

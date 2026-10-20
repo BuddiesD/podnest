@@ -34,6 +34,10 @@
       "description": "Per-site cron job CRUD, toggle, and run-now."
     },
     {
+      "name": "Database",
+      "description": "Per-site database dump, import, search-replace, and optimize/repair."
+    },
+    {
       "name": "Domains",
       "description": "Per-site domain attach/detach and listing."
     },
@@ -5280,6 +5284,804 @@
             }
           },
           "description": "TODO: document request body."
+        }
+      }
+    },
+    "/sites/{id}/db/dump": {
+      "get": {
+        "tags": [
+          "Database"
+        ],
+        "summary": "Download database dump",
+        "operationId": "get_sites_id_db_dump",
+        "responses": {
+          "200": {
+            "description": "Gzip-compressed SQL dump",
+            "content": {
+              "application/gzip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Dump failed before streaming began",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Site ID (or user ID under the Users tag).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "dl",
+            "in": "query",
+            "required": false,
+            "description": "Optional alphanumeric download correlation token (max 32); echoed back as a kp_dl_<token> cookie when streaming starts.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/sites/{id}/db/import/files": {
+      "get": {
+        "tags": [
+          "Database"
+        ],
+        "summary": "List importable SQL dumps",
+        "operationId": "get_sites_id_db_import_files",
+        "responses": {
+          "200": {
+            "description": "Filenames of .sql / .sql.gz dumps in the site's SFTP backups/import/ directory",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Site ID (or user ID under the Users tag).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/sites/{id}/db/import/sftp": {
+      "post": {
+        "tags": [
+          "Database"
+        ],
+        "summary": "Import SQL dump from SFTP",
+        "operationId": "post_sites_id_db_import_sftp",
+        "responses": {
+          "202": {
+            "description": "Import started; poll /sites/{id}/db/import/status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Site or file not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An import or restore is already running for this site",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Site ID (or user ID under the Users tag).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "filename"
+                ],
+                "properties": {
+                  "filename": {
+                    "type": "string",
+                    "description": "A .sql or .sql.gz file in the site's SFTP backups/import/ directory."
+                  },
+                  "wipe": {
+                    "type": "boolean",
+                    "description": "Drop every table, view and routine before importing; otherwise the dump is merged."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sites/{id}/db/import/status": {
+      "get": {
+        "tags": [
+          "Database"
+        ],
+        "summary": "Get import status",
+        "operationId": "get_sites_id_db_import_status",
+        "responses": {
+          "200": {
+            "description": "Whether an import is running and the last import error, if any",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Site ID (or user ID under the Users tag).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/sites/{id}/db/import/upload": {
+      "post": {
+        "tags": [
+          "Database"
+        ],
+        "summary": "Upload and import SQL dump",
+        "operationId": "post_sites_id_db_import_upload",
+        "responses": {
+          "202": {
+            "description": "Import started; poll /sites/{id}/db/import/status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An import or restore is already running for this site",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Upload exceeds 512 MB; use the SFTP import instead",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Site ID (or user ID under the Users tag).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "dump"
+                ],
+                "properties": {
+                  "dump": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "A .sql or .sql.gz dump, max 512 MB."
+                  },
+                  "wipe": {
+                    "type": "string",
+                    "enum": [
+                      "0",
+                      "1"
+                    ],
+                    "description": "\"1\" drops every table, view and routine before importing; otherwise the dump is merged."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sites/{id}/db/search-replace": {
+      "post": {
+        "tags": [
+          "Database"
+        ],
+        "summary": "Search-replace database (WordPress)",
+        "operationId": "post_sites_id_db_search_replace",
+        "responses": {
+          "200": {
+            "description": "Replacement count (what would be replaced on a dry run)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer"
+                    },
+                    "dry_run": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request, invalid terms, or not a WordPress site",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An import or restore is running for this site",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "WP-CLI failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Site ID (or user ID under the Users tag).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "search"
+                ],
+                "properties": {
+                  "search": {
+                    "type": "string",
+                    "maxLength": 1024,
+                    "description": "Text to find. Cannot start with a dash."
+                  },
+                  "replace": {
+                    "type": "string",
+                    "maxLength": 1024,
+                    "description": "Replacement text; may be empty. Cannot start with a dash."
+                  },
+                  "dry_run": {
+                    "type": "boolean",
+                    "description": "Count matches without writing anything."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sites/{id}/db/tables": {
+      "get": {
+        "tags": [
+          "Database"
+        ],
+        "summary": "List database tables",
+        "operationId": "get_sites_id_db_tables",
+        "responses": {
+          "200": {
+            "description": "Base tables with engine, estimated rows and size in bytes (data + indexes)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "engine": {
+                        "type": "string"
+                      },
+                      "rows": {
+                        "type": "integer"
+                      },
+                      "size": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Site type has no database",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Site ID (or user ID under the Users tag).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/sites/{id}/db/tables/maintain": {
+      "post": {
+        "tags": [
+          "Database"
+        ],
+        "summary": "Optimize or repair tables",
+        "operationId": "post_sites_id_db_tables_maintain",
+        "responses": {
+          "200": {
+            "description": "Per-table report from mariadb-check / mysqlcheck",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "output": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request, invalid action, or no tables selected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An import or restore is running for this site",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unknown table or the check tool failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Site ID (or user ID under the Users tag).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "action",
+                  "tables"
+                ],
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "optimize",
+                      "repair"
+                    ]
+                  },
+                  "tables": {
+                    "type": "array",
+                    "maxItems": 10000,
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Existing base table names in the site's database."
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },

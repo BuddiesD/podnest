@@ -579,8 +579,8 @@ func (m *Manager) clearDatabase(ctx context.Context, site *models.Site, dbName, 
 	return nil
 }
 
-// importDB pipes db_dump.sql into the target site's MariaDB container,
-// rewriting USE / CREATE DATABASE statements to match the target site name
+// importDB clears the target site's database, then loads db_dump.sql into it
+// with USE / CREATE DATABASE statements rewritten to match the target site name
 func (m *Manager) importDB(ctx context.Context, site *models.Site, dumpPath, siteDir string) error {
 	rootPass, err := readEnvValue(filepath.Join(siteDir, ".env"), "DB_ROOT_PASS")
 	if err != nil {
@@ -596,64 +596,90 @@ func (m *Manager) importDB(ctx context.Context, site *models.Site, dumpPath, sit
 		return err
 	}
 
-	// rewrite the dump to a temp file with corrected db references
-	rewritten, err := os.CreateTemp("", "podnest-import-db-*.sql")
+	f, err := os.Open(dumpPath)
 	if err != nil {
-		return fmt.Errorf("importDB: create temp: %w", err)
+		return fmt.Errorf("importDB: open dump: %w", err)
 	}
-	defer os.Remove(rewritten.Name())
+	defer f.Close()
 
-	if err := rewriteDBDump(dumpPath, rewritten, dbName); err != nil {
-		rewritten.Close()
-		return fmt.Errorf("importDB: rewrite: %w", err)
-	}
-	rewritten.Close()
-
-	// get the databse container name
-	dbContainer := podman.ContainerName(site.Name, "db")
-
-	// ensure no stale directory exists at the import path inside the container
-	cleanCmd := exec.CommandContext(ctx, "podman",
-		"exec", dbContainer, "rm", "-rf", "/tmp/podnest-import.sql",
-	)
-
-	// copy the rewritten dump into the container
-	cleanCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock)
-	_ = cleanCmd.Run()
-	cpCmd := exec.CommandContext(ctx, "podman",
-		"cp", rewritten.Name(), dbContainer+":/tmp/podnest-import.sql",
-	)
-	cpCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock)
-	if out, err := cpCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("importDB: podman cp: %w — %s", err, string(out))
-	}
-
-	// run the import inside the container
-	mysqlCmd := exec.CommandContext(ctx, "podman",
-		"exec", "-e", "MYSQL_PWD", dbContainer,
-		"sh", "-c",
-		fmt.Sprintf("mariadb -uroot %s < /tmp/podnest-import.sql && rm /tmp/podnest-import.sql", dbName),
-	)
-	mysqlCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock, "MYSQL_PWD="+rootPass)
-
-	var mysqlStderr bytes.Buffer
-	mysqlCmd.Stderr = &mysqlStderr
-	if err := mysqlCmd.Run(); err != nil {
-		return fmt.Errorf("importDB: mariadb: %w — %s", err, mysqlStderr.String())
+	if err := m.loadDBDump(ctx, site, f, dbName, rootPass); err != nil {
+		return fmt.Errorf("importDB: %w", err)
 	}
 
 	logger.Debug("importDB: DB imported for site %s", site.Name)
 	return nil
 }
 
-// rewriteDBDump copies src to dst line by line, replacing USE / CREATE DATABASE
-// statements that reference any database name with the target database name
-func rewriteDBDump(srcPath string, dst *os.File, targetDB string) error {
-	f, err := os.Open(srcPath)
+// loadDBDump rewrites the dump read from src to target dbName and pipes it into
+// the site's MariaDB container. Existing tables are left in place; callers
+// clear the schema first when the load must not merge.
+func (m *Manager) loadDBDump(ctx context.Context, site *models.Site, src io.Reader, dbName, rootPass string) error {
+
+	// a compressed dump can expand far beyond its upload size, so the rewritten
+	// copy is charged against the free space on the temp filesystem
+	budget, err := newExtractBudget(os.TempDir())
 	if err != nil {
-		return err
+		return fmt.Errorf("loadDBDump: %w", err)
 	}
-	defer f.Close()
+
+	// rewrite the dump to a temp file with corrected db references
+	rewritten, err := os.CreateTemp("", "podnest-import-db-*.sql")
+	if err != nil {
+		return fmt.Errorf("loadDBDump: create temp: %w", err)
+	}
+	defer os.Remove(rewritten.Name())
+
+	if err := rewriteDBDump(src, budgetWriter{w: rewritten, b: budget}, dbName); err != nil {
+		rewritten.Close()
+		return fmt.Errorf("loadDBDump: rewrite: %w", err)
+	}
+	rewritten.Close()
+
+	// get the database container name
+	dbContainer := podman.ContainerName(site.Name, "db")
+
+	// ensure no stale directory exists at the import path inside the container
+	cleanCmd := exec.CommandContext(ctx, "podman",
+		"exec", dbContainer, "rm", "-rf", "/tmp/podnest-import.sql",
+	)
+	cleanCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock)
+	_ = cleanCmd.Run()
+
+	// copy the rewritten dump into the container
+	cpCmd := exec.CommandContext(ctx, "podman",
+		"cp", rewritten.Name(), dbContainer+":/tmp/podnest-import.sql",
+	)
+	cpCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock)
+	if out, err := cpCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("loadDBDump: podman cp: %w — %s", err, string(out))
+	}
+
+	// run the import inside the container
+	mysqlCmd := exec.CommandContext(ctx, "podman",
+		"exec", "-e", "MYSQL_PWD", dbContainer,
+		"sh", "-c",
+		// the schema name is a positional arg, never interpolated into the script
+		`mariadb -uroot "$1" < /tmp/podnest-import.sql && rm /tmp/podnest-import.sql`,
+		"sh",
+		dbName,
+	)
+	mysqlCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock, "MYSQL_PWD="+rootPass)
+
+	var mysqlStderr bytes.Buffer
+	mysqlCmd.Stderr = &mysqlStderr
+	if err := mysqlCmd.Run(); err != nil {
+		return fmt.Errorf("loadDBDump: mariadb: %w — %s", err, mysqlStderr.String())
+	}
+
+	logger.Debug("loadDBDump: dump loaded into %s for site %s", dbName, site.Name)
+	return nil
+}
+
+// rewriteDBDump copies src to dst, replacing USE / CREATE DATABASE statements
+// that reference any database name with the target database name. Lines are
+// streamed in chunks, so a single statement of any length passes through
+// without being buffered whole.
+func rewriteDBDump(src io.Reader, dst io.Writer, targetDB string) error {
 
 	// patterns to match and rewrite — case-insensitive prefix checks
 	usePrefix := "use `"
@@ -664,27 +690,73 @@ func rewriteDBDump(srcPath string, dst *os.File, targetDB string) error {
 		return fmt.Errorf("rewriteDBDump: write USE: %w", err)
 	}
 
-	scanner := bufio.NewScanner(f)
-	// increase the buffer for very long lines (e.g. large INSERT rows)
-	scanner.Buffer(make([]byte, 4*1024*1024), 4*1024*1024)
+	br := bufio.NewReaderSize(src, 64*1024)
+	bw := bufio.NewWriterSize(dst, 64*1024)
 
-	for scanner.Scan() {
-		line := scanner.Text()
-		lower := strings.ToLower(line)
+	// atLineStart marks the next chunk as the beginning of a line; skipRest
+	// drops the remainder of a line that has already been rewritten
+	atLineStart, skipRest := true, false
+	for {
+		chunk, err := br.ReadSlice('\n')
+		if len(chunk) > 0 {
 
-		if strings.HasPrefix(lower, usePrefix) {
-			// rewrite: USE `anything`; → USE `targetDB`;
-			line = fmt.Sprintf("USE `%s`;", targetDB)
-		} else if strings.HasPrefix(lower, createPrefix) {
-			// rewrite: CREATE DATABASE `anything` ... → CREATE DATABASE IF NOT EXISTS `targetDB`;
-			line = fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s`;", targetDB)
+			// only the head of a line decides whether it is rewritten
+			if atLineStart {
+				head := chunk
+				if len(head) > 64 {
+					head = head[:64]
+				}
+				lower := strings.ToLower(string(head))
+
+				switch {
+				case strings.HasPrefix(lower, usePrefix):
+					// rewrite: USE `anything`; → USE `targetDB`;
+					if _, werr := fmt.Fprintf(bw, "USE `%s`;\n", targetDB); werr != nil {
+						return fmt.Errorf("rewriteDBDump: write: %w", werr)
+					}
+					skipRest = true
+				case strings.HasPrefix(lower, createPrefix):
+					// rewrite: CREATE DATABASE `anything` ... → CREATE DATABASE IF NOT EXISTS `targetDB`;
+					if _, werr := fmt.Fprintf(bw, "CREATE DATABASE IF NOT EXISTS `%s`;\n", targetDB); werr != nil {
+						return fmt.Errorf("rewriteDBDump: write: %w", werr)
+					}
+					skipRest = true
+				default:
+					skipRest = false
+				}
+			}
+
+			if !skipRest {
+				if _, werr := bw.Write(chunk); werr != nil {
+					return fmt.Errorf("rewriteDBDump: write: %w", werr)
+				}
+			}
+
+			// a chunk ending in a newline closes the line; a full buffer does not
+			atLineStart = chunk[len(chunk)-1] == '\n'
 		}
 
-		if _, err := fmt.Fprintln(dst, line); err != nil {
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("rewriteDBDump: read: %w", err)
+		}
+	}
+
+	// terminate a final line that arrived without its newline
+	if !atLineStart && !skipRest {
+		if _, err := bw.WriteString("\n"); err != nil {
 			return fmt.Errorf("rewriteDBDump: write: %w", err)
 		}
 	}
-	return scanner.Err()
+	if err := bw.Flush(); err != nil {
+		return fmt.Errorf("rewriteDBDump: flush: %w", err)
+	}
+	return nil
 }
 
 // ensureWPCLI installs wp-cli into the PHP container if not already present
@@ -739,14 +811,29 @@ func (m *Manager) ensureWPCLI(ctx context.Context, containerName string) error {
 		return fmt.Errorf("ensureWPCLI: start install exec: %w", err)
 	}
 
-	// the start call returns before the download finishes — running wp before
-	// the binary lands exits 127
-	code, err := m.waitExec(ctx, installResp.ID, 60*time.Second)
-	if err != nil {
-		return fmt.Errorf("ensureWPCLI: wait install exec: %w", err)
+	// the start call can return before the download finishes, so poll until
+	// the install exec exits rather than racing the first wp-cli run
+	deadline := time.Now().Add(60 * time.Second)
+	var inspect struct {
+		ExitCode int  `json:"ExitCode"`
+		Running  bool `json:"Running"`
 	}
-	if code != 0 {
-		return fmt.Errorf("ensureWPCLI: wp-cli install exited %d", code)
+	for time.Now().Before(deadline) {
+		time.Sleep(500 * time.Millisecond)
+		if err := m.podman.GetJSON(ctx,
+			"/v4.0.0/libpod/exec/"+installResp.ID+"/json", &inspect,
+		); err != nil {
+			return fmt.Errorf("ensureWPCLI: inspect install exec: %w", err)
+		}
+		if !inspect.Running {
+			break
+		}
+	}
+	if inspect.Running {
+		return fmt.Errorf("ensureWPCLI: wp-cli install timed out")
+	}
+	if inspect.ExitCode != 0 {
+		return fmt.Errorf("ensureWPCLI: wp-cli install exited %d", inspect.ExitCode)
 	}
 
 	logger.Debug("ensureWPCLI: wp-cli installed in %s", containerName)
