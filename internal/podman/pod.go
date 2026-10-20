@@ -427,6 +427,21 @@ func (c *Client) ContainerOutput(ctx context.Context, name string) (stdout, stde
 	return demuxStream(body)
 }
 
+// CgroupControllers returns the cgroup controllers available to this Podman
+// instance; rootless installs only get the ones systemd delegates to the user
+func (c *Client) CgroupControllers(ctx context.Context) ([]string, error) {
+	var info struct {
+		Host struct {
+			CgroupControllers []string `json:"cgroupControllers"`
+		} `json:"host"`
+	}
+	if err := c.get(ctx, "/v4.0.0/libpod/info", &info); err != nil {
+		logger.Error("failed to read podman info: %v", err)
+		return nil, err
+	}
+	return info.Host.CgroupControllers, nil
+}
+
 // PullImage pulls a container image only if the local digest differs from the
 // remote registry digest — skipping unnecessary re-pulls when already up to date
 func (c *Client) PullImage(ctx context.Context, image string) error {
