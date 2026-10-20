@@ -140,6 +140,12 @@ func migrateColumns(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_redirects_site ON kppn_redirects (site_id)`,
 		// pma sso session validation
 		`ALTER TABLE kppn_pma_tokens ADD COLUMN user_id INTEGER NOT NULL DEFAULT 0`,
+		// malware scanning
+		`CREATE TABLE IF NOT EXISTS kppn_malware_scans (id INTEGER PRIMARY KEY AUTOINCREMENT, site_id INTEGER NOT NULL REFERENCES kppn_sites(id) ON DELETE CASCADE, trigger_type TEXT NOT NULL DEFAULT 'scheduled', status INTEGER NOT NULL DEFAULT 1, files_scanned INTEGER NOT NULL DEFAULT 0, infected INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '', started DATETIME NOT NULL DEFAULT (datetime('now')), finished DATETIME)`,
+		`CREATE INDEX IF NOT EXISTS idx_malware_scans_site ON kppn_malware_scans (site_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_malware_scans_started ON kppn_malware_scans (started)`,
+		`CREATE TABLE IF NOT EXISTS kppn_malware_findings (id INTEGER PRIMARY KEY AUTOINCREMENT, scan_id INTEGER NOT NULL REFERENCES kppn_malware_scans(id) ON DELETE CASCADE, site_id INTEGER NOT NULL REFERENCES kppn_sites(id) ON DELETE CASCADE, path TEXT NOT NULL, signature TEXT NOT NULL, quarantined DATETIME)`,
+		`CREATE INDEX IF NOT EXISTS idx_malware_findings_scan ON kppn_malware_findings (scan_id)`,
 	}
 
 	for _, m := range migrations {
@@ -741,4 +747,30 @@ CREATE TABLE IF NOT EXISTS kppn_auto_bans (
 
 CREATE INDEX IF NOT EXISTS idx_auto_bans_scope   ON kppn_auto_bans (site_id, ip);
 CREATE INDEX IF NOT EXISTS idx_auto_bans_expires ON kppn_auto_bans (expires);
+
+CREATE TABLE IF NOT EXISTS kppn_malware_scans (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id       INTEGER  NOT NULL REFERENCES kppn_sites(id) ON DELETE CASCADE,
+    trigger_type  TEXT     NOT NULL DEFAULT 'scheduled',
+    status        INTEGER  NOT NULL DEFAULT 1,
+    files_scanned INTEGER  NOT NULL DEFAULT 0,
+    infected      INTEGER  NOT NULL DEFAULT 0,
+    error         TEXT     NOT NULL DEFAULT '',
+    started       DATETIME NOT NULL DEFAULT (datetime('now')),
+    finished      DATETIME
+);
+
+CREATE INDEX IF NOT EXISTS idx_malware_scans_site    ON kppn_malware_scans (site_id);
+CREATE INDEX IF NOT EXISTS idx_malware_scans_started ON kppn_malware_scans (started);
+
+CREATE TABLE IF NOT EXISTS kppn_malware_findings (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_id     INTEGER NOT NULL REFERENCES kppn_malware_scans(id) ON DELETE CASCADE,
+    site_id     INTEGER NOT NULL REFERENCES kppn_sites(id) ON DELETE CASCADE,
+    path        TEXT    NOT NULL,
+    signature   TEXT    NOT NULL,
+    quarantined DATETIME
+);
+
+CREATE INDEX IF NOT EXISTS idx_malware_findings_scan ON kppn_malware_findings (scan_id);
 `

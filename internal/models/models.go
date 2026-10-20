@@ -275,6 +275,39 @@ type SiteCron struct {
 	Updated    *time.Time
 }
 
+// Malware scan statuses stored in kppn_malware_scans.status
+const (
+	MalwareStatusRunning  = 1
+	MalwareStatusClean    = 2
+	MalwareStatusInfected = 3
+	MalwareStatusError    = 4
+)
+
+// MalwareScan represents a single malware scan run against a site's html directory
+type MalwareScan struct {
+	ID           int64             `json:"id"`
+	SiteID       int64             `json:"site_id"`
+	Trigger      string            `json:"trigger"`
+	Status       int               `json:"status"`
+	FilesScanned int               `json:"files_scanned"`
+	Infected     int               `json:"infected"`
+	Error        string            `json:"error"`
+	Started      time.Time         `json:"started"`
+	Finished     *time.Time        `json:"finished"`
+	Findings     []*MalwareFinding `json:"findings,omitempty"`
+}
+
+// MalwareFinding represents one infected file reported by a malware scan;
+// Path is relative to the site's html directory
+type MalwareFinding struct {
+	ID          int64      `json:"id"`
+	ScanID      int64      `json:"scan_id"`
+	SiteID      int64      `json:"site_id"`
+	Path        string     `json:"path"`
+	Signature   string     `json:"signature"`
+	Quarantined *time.Time `json:"quarantined"`
+}
+
 // ResourceWarning holds the current host resource threshold breach state.
 type ResourceWarning struct {
 	Active      bool      `json:"active"`
