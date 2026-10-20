@@ -1074,8 +1074,8 @@
                             </div>
                         </div>
                         <p class="kp-muted uk-text-small uk-margin-small-bottom">
-                            The site's html directory is scanned nightly at midnight with ClamAV, Linux Malware Detect,
-                            and php-malware-finder rules. Findings are reported only \u2014 quarantine moves a file out of
+                            The site's html directory is scanned nightly at midnight with ClamAV and Linux Malware Detect.
+                            Findings are reported only \u2014 quarantine moves a file out of
                             the site and out of SFTP reach. History is kept for <span id="sec-malware-retain">30</span> days.
                         </p>
                         <div id="sec-malware-list">
@@ -1521,8 +1521,8 @@ ${r}`:r),a.hide(),c.success(`${r} added to blacklist \u2014 save to apply`)})}ca
                 </div>
                 <form id="malware-form" class="uk-form-stacked">
                     <p class="kp-muted uk-text-small uk-margin-bottom">
-                        Every site's html directory is scanned nightly at midnight with ClamAV, Linux Malware Detect,
-                        and php-malware-finder rules. Scans run one site at a time in a throwaway container.
+                        Every site's html directory is scanned nightly at midnight with ClamAV and Linux Malware Detect.
+                        Scans run one site at a time in a throwaway container.
                     </p>
                     <div class="uk-grid-small uk-child-width-1-3@m" uk-grid>
                         <div>
