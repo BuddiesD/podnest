@@ -28,6 +28,7 @@ import (
 	"podnest/internal/fileutil"
 	"podnest/internal/handlers/domains"
 	"podnest/internal/logger"
+	"podnest/internal/malware"
 	"podnest/internal/models"
 	"podnest/internal/modules"
 	"podnest/internal/modules/types/wordpress"
@@ -774,6 +775,9 @@ func (h *Handler) apiDeleteSite(w http.ResponseWriter, r *http.Request) {
 	if err := os.RemoveAll(siteDir); err != nil {
 		logger.Warn("failed to remove site directory %s: %v", siteDir, err)
 	}
+
+	// quarantined files live outside the site directory, so they go separately
+	_ = malware.RemoveQuarantine(h.AppPath, site.ID)
 
 	log.Printf("Site %s deleted successfully", site.Name)
 
