@@ -618,6 +618,25 @@ func (s *Server) auditMaintenance() {
 	}
 }
 
+// malwareScheduler scans every site's html directory at local midnight, then
+// prunes scan history past the retention window. The next midnight is computed
+// each pass so DST changes and long scan runs never shift the schedule.
+func (s *Server) malwareScheduler() {
+	for {
+		now := time.Now()
+		next := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
+		if !s.sleep(time.Until(next)) {
+			return
+		}
+
+		s.malware.ScanAll(s.ctx)
+
+		if err := db.PruneMalwareScans(s.cfg.DB, s.malware.RetainDays()); err != nil {
+			logger.Error("malwareScheduler: prune failed: %v", err)
+		}
+	}
+}
+
 // archiveAuditDay exports all audit rows for the given UTC day to
 // {AppPath}/logs/audit/audit-YYYY-MM-DD.csv.tar.gz.
 func archiveAuditDay(database *sql.DB, appPath string, day time.Time) error {

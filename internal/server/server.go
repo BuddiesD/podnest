@@ -20,6 +20,7 @@ import (
 	"podnest/internal/cron"
 	"podnest/internal/db"
 	"podnest/internal/logger"
+	"podnest/internal/malware"
 	"podnest/internal/modules/platform/fail2ban"
 	"podnest/internal/notifications"
 	"podnest/internal/podman"
@@ -52,6 +53,7 @@ type Config struct {
 	AdminDomain     string
 	BackupManager   *backup.Manager
 	CronManager     *cron.Manager
+	MalwareManager  *malware.Manager
 }
 
 // Server is the main HTTP server
@@ -64,6 +66,7 @@ type Server struct {
 	proxy    *proxy.Proxy
 	backup   *backup.Manager
 	cron     *cron.Manager
+	malware  *malware.Manager
 	stats    *statsCache
 	resource *resourceState
 	audit    *audit.Recorder
@@ -82,6 +85,7 @@ func New(cfg Config) *Server {
 		fail2ban: cfg.Fail2BanManager,
 		backup:   cfg.BackupManager,
 		cron:     cfg.CronManager,
+		malware:  cfg.MalwareManager,
 		stats:    newStatsCache(),
 		resource: newResourceState(),
 		audit:    audit.New(cfg.DB),
@@ -116,6 +120,7 @@ func (s *Server) Start() error {
 	// push the resolved host path into the SFTP manager & fail2ban manager before Ensure runs
 	s.sftp.SetHostAppPath(s.cfg.HostAppPath)
 	s.fail2ban.SetHostAppPath(s.cfg.HostAppPath)
+	s.malware.SetHostAppPath(s.cfg.HostAppPath)
 
 	// ensure the sites directory exists before the SFTP container tries to mount it
 	if err := os.MkdirAll(s.cfg.AppPath+"/sites", 0755); err != nil {
@@ -188,6 +193,12 @@ func (s *Server) Start() error {
 
 	// start the per-site cron scheduler
 	s.cron.Start(s.ctx)
+
+	// a restart kills any scanner mid-run, so close out scans it left open
+	_ = db.FailRunningMalwareScans(s.cfg.DB)
+
+	// scan every site's html directory nightly at midnight
+	s.goTracked(s.malwareScheduler)
 
 	// read the admin domain from the database, falling back to the flag value
 	adminDomain := s.cfg.AdminDomain

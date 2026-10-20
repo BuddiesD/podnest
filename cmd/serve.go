@@ -16,6 +16,7 @@ import (
 	"podnest/internal/cron"
 	"podnest/internal/db"
 	"podnest/internal/logger"
+	"podnest/internal/malware"
 	"podnest/internal/modules"
 	"podnest/internal/modules/features/backups"
 	"podnest/internal/modules/features/basicauth"
@@ -117,6 +118,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// create the cron manager
 	cronMgr := cron.New(database, podmanClient)
 
+	// create the malware scan manager
+	malwareMgr := malware.New(podmanClient, database, appPath, "")
+
 	// register site type modules
 	modules.RegisterType(wordpress.Module{})
 	modules.RegisterType(php.Module{})
@@ -137,6 +141,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Fail2BanManager: f2bMgr,
 		BackupManager:   backupMgr,
 		CronManager:     cronMgr,
+		MalwareManager:  malwareMgr,
 		CertDir:         appPath + "/certs",
 		AdminDomain:     adminDomain,
 	})
