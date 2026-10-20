@@ -37,9 +37,9 @@ jobs:
             VERSION="${{ github.ref_name }}"
             echo "TAGS=ghcr.io/${{ github.repository_owner }}/podnest:latest,ghcr.io/${{ github.repository_owner }}/podnest:${VERSION}" >> $GITHUB_OUTPUT
           elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "TAGS=ghcr.io/${{ github.repository_owner }}/podnest:develop,ghcr.io/${{ github.repository_owner }}/podnest:dev" >> $GITHUB_OUTPUT
+            echo "TAGS=ghcr.io/${{ github.repository_owner }}/podnest:beta" >> $GITHUB_OUTPUT
           elif [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
-            echo "TAGS=ghcr.io/${{ github.repository_owner }}/podnest:beta,ghcr.io/${{ github.repository_owner }}/podnest:${{ github.sha }}" >> $GITHUB_OUTPUT
+            echo "TAGS=ghcr.io/${{ github.repository_owner }}/podnest:develop,ghcr.io/${{ github.repository_owner }}/podnest:dev" >> $GITHUB_OUTPUT
           fi
 
       - name: Build and Push
