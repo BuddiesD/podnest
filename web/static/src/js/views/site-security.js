@@ -5,6 +5,7 @@
 "use strict";
 
 import { api } from '../api.js';
+import { confirm, escapeHtml } from '../helpers.js';
 import { toast } from '../toast.js';
 
 // renderSecurityPanel renders the shared IP + UA security panel for either
@@ -24,6 +25,9 @@ export function renderSecurityPanel(siteId = null) {
                 <li data-tab="ua"><a href="#"><span uk-icon="icon: laptop; ratio: 0.85"></span> User-Agent</a></li>
                 <li data-tab="country"><a href="#"><span uk-icon="icon: world; ratio: 0.85"></span> Country</a></li>
                 <li data-tab="asn"><a href="#"><span uk-icon="icon: server; ratio: 0.85"></span> ASN</a></li>
+                ${siteId ? `
+                <li data-tab="malware"><a href="#"><span uk-icon="icon: bolt; ratio: 0.85"></span> Malware</a></li>
+                ` : ''}
                 ${!siteId ? `
                 <li data-tab="proxies"><a href="#"><span uk-icon="icon: link; ratio: 0.85"></span> Trusted Proxies</a></li>
                 <li data-tab="bypass"><a href="#"><span uk-icon="icon: unlock; ratio: 0.85"></span> Bypass</a></li>
@@ -85,6 +89,30 @@ export function renderSecurityPanel(siteId = null) {
                         </div>
                     </div>
                 </li>
+
+                ${siteId ? `
+                <!-- malware scans -->
+                <li>
+                    <div class="kp-card uk-padding-small">
+                        <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                            <h3 class="kp-view-title">Malware Scans</h3>
+                            <div class="uk-flex" style="gap:8px">
+                                <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-malware-scan" uk-tooltip="Scan this site now" disabled>
+                                    <span uk-icon="search"></span>
+                                </button>
+                            </div>
+                        </div>
+                        <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                            The site's html directory is scanned nightly at midnight with ClamAV, Linux Malware Detect,
+                            and php-malware-finder rules. Findings are reported only — quarantine moves a file out of
+                            the site and out of SFTP reach. History is kept for <span id="sec-malware-retain">30</span> days.
+                        </p>
+                        <div id="sec-malware-list">
+                            <div uk-spinner="ratio: 0.6"></div>
+                        </div>
+                    </div>
+                </li>
+                ` : ''}
 
                 <!-- user-agent rules -->
                 <li>
@@ -346,6 +374,101 @@ export async function loadSecurityPanel(root) {
     } catch (e) {
         toast.error("Failed to load security rules: " + e.message);
     }
+
+    if (panel.dataset.siteId) loadMalwarePanel(root, panel.dataset.siteId);
+}
+
+// MALWARE_STATUS maps a scan status to its badge class and label
+const MALWARE_STATUS = {
+    1: ["restarting", "Running"],
+    2: ["running", "Clean"],
+    3: ["error", "Infected"],
+    4: ["stopped", "Failed"],
+};
+
+// malwarePoll holds the refresh timer armed while a scan is queued or running
+let malwarePoll = null;
+
+// renderMalwareScans returns the scan history table, with each scan's findings
+// listed beneath it
+function renderMalwareScans(data) {
+    if (!data.scannable) {
+        return `<p class="kp-muted uk-text-small uk-margin-remove">This site has no html directory to scan.</p>`;
+    }
+    if (!data.scans.length) {
+        return `<p class="kp-muted uk-text-small uk-margin-remove">No scans yet.</p>`;
+    }
+
+    const rows = data.scans.map((s) => {
+        const [cls, label] = MALWARE_STATUS[s.status] || ["stopped", "Unknown"];
+        const running = s.status === 1;
+        const findings = (s.findings || []).map((f) => `
+            <tr>
+                <td colspan="4" style="padding-left:24px">
+                    <div class="kp-mono" style="font-size:0.8rem">${escapeHtml(f.path)}</div>
+                    <div class="kp-muted uk-text-small">${escapeHtml(f.signature)}</div>
+                </td>
+                <td>
+                    ${f.quarantined
+                        ? `<span class="kp-muted uk-text-small">Quarantined</span>`
+                        : `<button class="uk-button kp-btn-danger kp-btn-sm sec-malware-quarantine" data-id="${f.id}" uk-tooltip="Move this file into quarantine">
+                               <span uk-icon="lock"></span>
+                           </button>`}
+                </td>
+            </tr>`).join("");
+
+        return `
+            <tr>
+                <td>${new Date(s.started).toLocaleString()}</td>
+                <td>${s.trigger === "manual" ? "Manual" : "Scheduled"}</td>
+                <td>
+                    <span class="kp-status kp-status-${cls}">${label}</span>
+                    ${s.error ? `<div class="kp-muted uk-text-small">${escapeHtml(s.error)}</div>` : ""}
+                </td>
+                <td>${running ? "—" : s.files_scanned}</td>
+                <td>${running ? "—" : s.infected}</td>
+            </tr>${findings}`;
+    }).join("");
+
+    return `
+        <div class="uk-overflow-auto">
+        <table class="uk-table uk-table-small uk-table-divider uk-margin-remove">
+            <thead>
+                <tr>
+                    <th>Started</th>
+                    <th>Trigger</th>
+                    <th>Status</th>
+                    <th>Files</th>
+                    <th>Hits</th>
+                </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+        </table>
+        </div>`;
+}
+
+// loadMalwarePanel fetches the site's scan history and re-polls while a scan is
+// queued or running
+async function loadMalwarePanel(root, siteId) {
+    clearTimeout(malwarePoll);
+    if (!root.querySelector("#sec-malware-list")) return;
+
+    try {
+        const data = await api.get(`/sites/${siteId}/malware`);
+
+        // bail if the user navigated away while the fetch was in flight
+        const list = root.querySelector("#sec-malware-list");
+        if (!list) return;
+
+        const active = data.scans.some((s) => s.status === 1);
+        list.innerHTML = renderMalwareScans(data);
+        root.querySelector("#sec-malware-scan").disabled = !data.scannable || active;
+        root.querySelector("#sec-malware-retain").textContent = data.retain_days;
+
+        if (active) malwarePoll = setTimeout(() => loadMalwarePanel(root, siteId), 10000);
+    } catch (e) {
+        toast.error("Failed to load malware scans: " + e.message);
+    }
 }
 
 // wireSecurityPanel attaches save button handlers to the security panel.
@@ -453,6 +576,47 @@ export function wireSecurityPanel(root) {
 
     // ASN lookup modal
     root.querySelector("#sec-asn-lookup")?.addEventListener("click", () => showASNLookupModal(root));
+
+    // queue an immediate malware scan
+    root.querySelector("#sec-malware-scan")?.addEventListener("click", async () => {
+        const btn  = root.querySelector("#sec-malware-scan");
+        const orig = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<div uk-spinner="ratio: 0.5"></div>';
+        try {
+            await api.post(`/sites/${panel.dataset.siteId}/malware/scan`);
+            toast.success("Malware scan queued");
+            await loadMalwarePanel(root, panel.dataset.siteId);
+        } catch (e) {
+            toast.error(e.message);
+            btn.disabled = false;
+        } finally {
+            btn.innerHTML = orig;
+        }
+    });
+
+    // quarantine a finding's file
+    root.querySelector("#sec-malware-list")?.addEventListener("click", async (e) => {
+        const btn = e.target.closest(".sec-malware-quarantine");
+        if (!btn) return;
+
+        const ok = await confirm(
+            "Quarantine File",
+            "This moves the file out of the site's html directory. If it is legitimately needed, the site may break. Continue?"
+        );
+        if (!ok) return;
+
+        btn.disabled = true;
+        btn.innerHTML = '<div uk-spinner="ratio: 0.5"></div>';
+        try {
+            await api.post(`/sites/${panel.dataset.siteId}/malware/findings/${btn.dataset.id}/quarantine`);
+            toast.success("File quarantined");
+        } catch (err) {
+            toast.error(err.message);
+        } finally {
+            await loadMalwarePanel(root, panel.dataset.siteId);
+        }
+    });
 
     // save trusted proxy CIDRs
     root.querySelector("#sec-tp-save")?.addEventListener("click", async () => {
