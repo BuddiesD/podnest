@@ -161,55 +161,6 @@ export async function viewSettings(root, params = {}) {
                 </form>
             </div>
         </li>
-        
-        <!-- malware: scan history retention + scanner resource caps -->
-        <li>
-            <div class="kp-card uk-padding">
-                <div class="uk-flex uk-flex-right uk-margin-bottom">
-                    ${settingsIO("malware")}
-                </div>
-                <form id="malware-form" class="uk-form-stacked">
-                    <p class="kp-muted uk-text-small uk-margin-bottom">
-                        Every site's html directory is scanned nightly at midnight with ClamAV, Linux Malware Detect,
-                        and php-malware-finder rules. Scans run one site at a time in a throwaway container.
-                    </p>
-                    <div class="uk-grid-small uk-child-width-1-3@m" uk-grid>
-                        <div>
-                            <label class="kp-label" for="malware-retain-days">Retain History (days)</label>
-                            <input class="uk-input kp-input" id="malware-retain-days" name="malware_retain_days" type="number"
-                                min="1" max="3650" step="1" placeholder="30"
-                                value="${malwareSettings.malware_retain_days || '30'}">
-                            <p class="kp-muted uk-text-small uk-margin-small-top">
-                                Scan results older than this are pruned after each nightly run.
-                            </p>
-                        </div>
-                        <div>
-                            <label class="kp-label" for="malware-memory-mb">Scanner Memory (MB)</label>
-                            <input class="uk-input kp-input" id="malware-memory-mb" name="malware_memory_mb" type="number"
-                                min="512" max="65536" step="1" placeholder="2048"
-                                value="${malwareSettings.malware_memory_mb || '2048'}">
-                            <p class="kp-muted uk-text-small uk-margin-small-top">
-                                ClamAV's signature set alone needs over 1 GB; too low and scans fail out of memory.
-                            </p>
-                        </div>
-                        <div>
-                            <label class="kp-label" for="malware-cpus">Scanner CPUs</label>
-                            <input class="uk-input kp-input" id="malware-cpus" name="malware_cpus" type="number"
-                                min="0.1" max="64" step="0.1" placeholder="1"
-                                value="${malwareSettings.malware_cpus || '1'}">
-                            <p class="kp-muted uk-text-small uk-margin-small-top">
-                                CPU cores the scanner may use. Fractions are allowed (e.g. 0.5).
-                            </p>
-                        </div>
-                    </div>
-                    <div class="uk-flex uk-flex-right uk-margin-top">
-                        <button type="submit" class="uk-button kp-btn-primary">
-                            <span uk-icon="check"></span> Save Settings
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </li>
 
         <!-- backups: schedule/retention + S3 storage -->
         <li>
@@ -396,6 +347,55 @@ export async function viewSettings(root, params = {}) {
                                     Alphanumeric sender name shown on the recipient's phone. Supported in select AWS regions only.
                                 </p>
                             </div>
+                        </div>
+                    </div>
+                    <div class="uk-flex uk-flex-right uk-margin-top">
+                        <button type="submit" class="uk-button kp-btn-primary">
+                            <span uk-icon="check"></span> Save Settings
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </li>
+
+        <!-- malware: scan history retention + scanner resource caps -->
+        <li>
+            <div class="kp-card uk-padding">
+                <div class="uk-flex uk-flex-right uk-margin-bottom">
+                    ${settingsIO("malware")}
+                </div>
+                <form id="malware-form" class="uk-form-stacked">
+                    <p class="kp-muted uk-text-small uk-margin-bottom">
+                        Every site's html directory is scanned nightly at midnight with ClamAV, Linux Malware Detect,
+                        and php-malware-finder rules. Scans run one site at a time in a throwaway container.
+                    </p>
+                    <div class="uk-grid-small uk-child-width-1-3@m" uk-grid>
+                        <div>
+                            <label class="kp-label" for="malware-retain-days">Retain History (days)</label>
+                            <input class="uk-input kp-input" id="malware-retain-days" name="malware_retain_days" type="number"
+                                min="1" max="3650" step="1" placeholder="30"
+                                value="${malwareSettings.malware_retain_days || '30'}">
+                            <p class="kp-muted uk-text-small uk-margin-small-top">
+                                Scan results older than this are pruned after each nightly run.
+                            </p>
+                        </div>
+                        <div>
+                            <label class="kp-label" for="malware-memory-mb">Scanner Memory (MB)</label>
+                            <input class="uk-input kp-input" id="malware-memory-mb" name="malware_memory_mb" type="number"
+                                min="512" max="65536" step="1" placeholder="2048"
+                                value="${malwareSettings.malware_memory_mb || '2048'}">
+                            <p class="kp-muted uk-text-small uk-margin-small-top">
+                                ClamAV's signature set alone needs over 1 GB; too low and scans fail out of memory.
+                            </p>
+                        </div>
+                        <div>
+                            <label class="kp-label" for="malware-cpus">Scanner CPUs</label>
+                            <input class="uk-input kp-input" id="malware-cpus" name="malware_cpus" type="number"
+                                min="0.1" max="64" step="0.1" placeholder="1"
+                                value="${malwareSettings.malware_cpus || '1'}">
+                            <p class="kp-muted uk-text-small uk-margin-small-top">
+                                CPU cores the scanner may use. Fractions are allowed (e.g. 0.5).
+                            </p>
                         </div>
                     </div>
                     <div class="uk-flex uk-flex-right uk-margin-top">

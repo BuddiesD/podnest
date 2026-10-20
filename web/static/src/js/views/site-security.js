@@ -90,30 +90,6 @@ export function renderSecurityPanel(siteId = null) {
                     </div>
                 </li>
 
-                ${siteId ? `
-                <!-- malware scans -->
-                <li>
-                    <div class="kp-card uk-padding-small">
-                        <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
-                            <h3 class="kp-view-title">Malware Scans</h3>
-                            <div class="uk-flex" style="gap:8px">
-                                <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-malware-scan" uk-tooltip="Scan this site now" disabled>
-                                    <span uk-icon="search"></span>
-                                </button>
-                            </div>
-                        </div>
-                        <p class="kp-muted uk-text-small uk-margin-small-bottom">
-                            The site's html directory is scanned nightly at midnight with ClamAV, Linux Malware Detect,
-                            and php-malware-finder rules. Findings are reported only — quarantine moves a file out of
-                            the site and out of SFTP reach. History is kept for <span id="sec-malware-retain">30</span> days.
-                        </p>
-                        <div id="sec-malware-list">
-                            <div uk-spinner="ratio: 0.6"></div>
-                        </div>
-                    </div>
-                </li>
-                ` : ''}
-
                 <!-- user-agent rules -->
                 <li>
                     <div class="kp-card uk-padding-small">
@@ -236,6 +212,30 @@ export function renderSecurityPanel(siteId = null) {
                         </div>
                     </div>
                 </li>
+
+                ${siteId ? `
+                <!-- malware scans -->
+                <li>
+                    <div class="kp-card uk-padding-small">
+                        <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                            <h3 class="kp-view-title">Malware Scans</h3>
+                            <div class="uk-flex" style="gap:8px">
+                                <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-malware-scan" uk-tooltip="Scan this site now" disabled>
+                                    <span uk-icon="search"></span>
+                                </button>
+                            </div>
+                        </div>
+                        <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                            The site's html directory is scanned nightly at midnight with ClamAV, Linux Malware Detect,
+                            and php-malware-finder rules. Findings are reported only — quarantine moves a file out of
+                            the site and out of SFTP reach. History is kept for <span id="sec-malware-retain">30</span> days.
+                        </p>
+                        <div id="sec-malware-list">
+                            <div uk-spinner="ratio: 0.6"></div>
+                        </div>
+                    </div>
+                </li>
+                ` : ''}
 
                 ${!siteId ? `
                 <!-- trusted proxy ranges -->
