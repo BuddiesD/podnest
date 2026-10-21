@@ -45,6 +45,7 @@ func (s *Server) sessionReaper() {
 		_ = auth.PurgeExpiredSessions(s.cfg.DB)
 		_ = db.DeleteExpiredPMATokens(s.cfg.DB)
 		_ = db.DeleteExpiredPMASessions(s.cfg.DB)
+		_ = db.DeleteExpiredNodeTokens(s.cfg.DB)
 	}
 }
 
