@@ -274,3 +274,24 @@ func SetNodeUserBlocked(database *sql.DB, id int64, blocked bool) error {
 	}
 	return tx.Commit()
 }
+
+// GetUserByNodeUID retrieves the synced user carrying the parent's user ID. Returns nil when missing.
+func GetUserByNodeUID(db *sql.DB, nodeUID int64) (*models.User, error) {
+	u := &models.User{}
+	err := db.QueryRow(`
+		SELECT id, uname, pword, uhash, fname, lname, email, phone, role, totp_secret, totp_salt, totp_enabled, notify_email, notify_sms, node_uid, blocked, created, updated
+		FROM kppn_users WHERE node_uid = ? AND node_uid > 0`, nodeUID,
+	).Scan(
+		&u.ID, &u.UName, &u.PWord, &u.UHash, &u.FName, &u.LName,
+		&u.Email, &u.Phone, &u.Role, &u.TOTPSecret, &u.TOTPSalt, &u.TOTPEnabled,
+		&u.NotifyEmail, &u.NotifySMS, &u.NodeUID, &u.Blocked, &u.Created, &u.Updated,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		logger.Error("GetUserByNodeUID: failed to retrieve node user %d: %v", nodeUID, err)
+		return nil, err
+	}
+	return u, nil
+}

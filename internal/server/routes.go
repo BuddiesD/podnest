@@ -114,6 +114,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/login", s.handleLogin)
 	mux.HandleFunc("/login/totp", s.handleLoginTOTP)
 	mux.HandleFunc("/logout", s.handleLogout)
+	mux.HandleFunc("/node/link", s.handleNodeLink)
 
 	// UI routes — require a valid session; the admin route additionally requires the admin role
 	protected := auth.RequireAuth(s.cfg.DB, http.HandlerFunc(s.handleUI))
