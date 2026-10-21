@@ -295,3 +295,29 @@ func GetUserByNodeUID(db *sql.DB, nodeUID int64) (*models.User, error) {
 	}
 	return u, nil
 }
+
+// GetNodeAdmins returns this node's unblocked admins — local and synced alike —
+// as the list carried down to a child on an SSO hop. The child keys them by
+// this node's user ID.
+func GetNodeAdmins(db *sql.DB) ([]models.NodeUser, error) {
+	rows, err := db.Query(`
+		SELECT id, fname, lname, email, phone FROM kppn_users
+		WHERE role = ? AND blocked = 0 ORDER BY id ASC`, models.RoleAdmin,
+	)
+	if err != nil {
+		logger.Error("GetNodeAdmins: failed to list admins: %v", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.NodeUser
+	for rows.Next() {
+		var nu models.NodeUser
+		if err := rows.Scan(&nu.NodeUID, &nu.FName, &nu.LName, &nu.Email, &nu.Phone); err != nil {
+			logger.Error("GetNodeAdmins: failed to scan admin: %v", err)
+			return nil, err
+		}
+		out = append(out, nu)
+	}
+	return out, rows.Err()
+}
