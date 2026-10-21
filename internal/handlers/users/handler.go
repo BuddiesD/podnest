@@ -30,6 +30,7 @@ func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 	api.Handle("GET /users/{id}", auth.RequireAPIAdmin(http.HandlerFunc(h.apiGetUser)))
 	api.Handle("PUT /users/{id}", auth.RequireAPIAdmin(http.HandlerFunc(h.apiUpdateUser)))
 	api.Handle("DELETE /users/{id}", auth.RequireAPIAdmin(http.HandlerFunc(h.apiDeleteUser)))
+	api.Handle("PUT /users/{id}/blocked", auth.RequireAPIAdmin(http.HandlerFunc(h.apiSetBlocked)))
 
 	api.HandleFunc("POST /users/{id}/totp/setup", h.apiTOTPSetup)
 	api.HandleFunc("POST /users/{id}/totp/confirm", h.apiTOTPConfirm)
@@ -56,6 +57,8 @@ func (h *Handler) apiListUsers(w http.ResponseWriter, r *http.Request) {
 		TOTPEnabled bool   `json:"totp_enabled"`
 		NotifyEmail bool   `json:"notify_email"`
 		NotifySMS   bool   `json:"notify_sms"`
+		NodeUID     int64  `json:"node_uid"`
+		Blocked     bool   `json:"blocked"`
 		Created     string `json:"created"`
 	}
 
@@ -73,6 +76,8 @@ func (h *Handler) apiListUsers(w http.ResponseWriter, r *http.Request) {
 			TOTPEnabled: u.TOTPEnabled,
 			NotifyEmail: u.NotifyEmail,
 			NotifySMS:   u.NotifySMS,
+			NodeUID:     u.NodeUID,
+			Blocked:     u.Blocked,
 			Created:     u.Created.Format("2006-01-02 15:04:05"),
 		})
 	}
@@ -206,6 +211,13 @@ func (h *Handler) apiUpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// synced node users authenticate only through the parent's SSO hop — a
+	// password set here would open a second way in that the parent never sees
+	if req.Password != "" && target.NodeUID > 0 {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "synced node users cannot have a password")
+		return
+	}
+
 	// a self-service password change must prove the current password; the change
 	// below invalidates every session for the account, so a hijacked session
 	// would otherwise convert into a permanent lockout of the real owner
@@ -321,6 +333,43 @@ func (h *Handler) apiDeleteUser(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *Handler) apiSetBlocked(w http.ResponseWriter, r *http.Request) {
+	target, ok := h.resolveUser(w, r)
+	if !ok {
+		return
+	}
+	caller := auth.UserFromContext(r.Context())
+
+	if target.NodeUID == 0 {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "only synced node users can be blocked")
+		return
+	}
+	if target.ID == caller.ID {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "cannot block your own account")
+		return
+	}
+
+	var req struct {
+		Blocked bool `json:"blocked"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apiutil.Error(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if err := db.SetNodeUserBlocked(h.DB, target.ID, req.Blocked); err != nil {
+		logger.Error("failed to set blocked=%t on user %d: %v", req.Blocked, target.ID, err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	if req.Blocked {
+		_ = db.DeletePMASessionsByUser(h.DB, target.ID)
+	}
+
+	logger.Debug("user %d set blocked=%t on user %d", caller.ID, req.Blocked, target.ID)
+	apiutil.JSON(w, http.StatusOK, map[string]bool{"blocked": req.Blocked})
+}
+
 func (h *Handler) apiTOTPSetup(w http.ResponseWriter, r *http.Request) {
 	caller := auth.UserFromContext(r.Context())
 	target, ok := h.resolveUser(w, r)
@@ -365,6 +414,13 @@ func (h *Handler) apiTOTPConfirm(w http.ResponseWriter, r *http.Request) {
 	if caller.ID != target.ID {
 		logger.Warn("apiTOTPConfirm: user %d attempted TOTP confirm on user %d", caller.ID, target.ID)
 		apiutil.ErrorMsg(w, http.StatusForbidden, "TOTP can only be confirmed for your own account")
+		return
+	}
+
+	// a synced user's second factor was already checked on the parent, and with
+	// no password there is no key to encrypt a secret with
+	if target.NodeUID > 0 {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "synced node users cannot set up TOTP")
 		return
 	}
 
