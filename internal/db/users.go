@@ -84,7 +84,7 @@ func GetUserByID(db *sql.DB, id int64) (*models.User, error) {
 
 	// query the database for a user matching the provided ID and scan the result into the user struct
 	err := db.QueryRow(`
-		SELECT id, uname, pword, uhash, fname, lname, email, phone, role, totp_secret, totp_salt, totp_enabled, notify_email, notify_sms, created, updated
+		SELECT id, uname, pword, uhash, fname, lname, email, phone, role, totp_secret, totp_salt, totp_enabled, notify_email, notify_sms, node_uid, blocked, created, updated
 		FROM kppn_users WHERE id = ?`, id,
 	).Scan(
 		&u.ID, &u.UName, &u.PWord, &u.UHash, &u.FName, &u.LName,
