@@ -129,6 +129,15 @@ func Login(database *sql.DB, uname, password string) (*LoginResult, error) {
 		return nil, ErrInvalidCredentials
 	}
 
+	// synced node users sign in only through their parent's SSO hop — the dummy
+	// compare keeps this rejection as slow as a wrong password
+	if user.NodeUID > 0 {
+		h := sha256.Sum256([]byte(password))
+		_ = bcrypt.CompareHashAndPassword(loginDummyHash, []byte(fmt.Sprintf("%x", h)))
+		logger.Error("password login refused for synced node user: %s", uname)
+		return nil, ErrInvalidCredentials
+	}
+
 	// Hash the provided password using SHA-256 before comparing with the stored bcrypt hash
 	h := sha256.Sum256([]byte(password))
 	hashed := fmt.Sprintf("%x", h)
@@ -327,6 +336,9 @@ func SessionAndUser(database *sql.DB, sessionID string) (*models.Session, *model
 	if err != nil {
 		return nil, nil, err
 	}
+	if user == nil || user.Blocked {
+		return nil, nil, nil
+	}
 	return session, user, nil
 }
 
@@ -350,8 +362,15 @@ func SessionUser(database *sql.DB, sessionID string) (*models.User, error) {
 
 	logger.Debug("retrieved session for user %d, expires %s", session.UID, session.ExpiresAt.Format(time.RFC3339))
 
-	// Retrieve the user associated with the session
-	return db.GetUserByID(database, session.UID)
+	// Retrieve the user associated with the session — a blocked user's session is dead
+	user, err := db.GetUserByID(database, session.UID)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil || user.Blocked {
+		return nil, errors.New("session not found")
+	}
+	return user, nil
 }
 
 // SessionFromRequest extracts the session token from the request cookie
