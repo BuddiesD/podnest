@@ -61,7 +61,7 @@ export function userRow(u) {
         <td><strong>${escapeHtml(u.fname)} ${escapeHtml(u.lname)}</strong></td>
         <td><span style="font-family:monospace">${escapeHtml(u.uname)}</span></td>
         <td>${escapeHtml(u.email)}</td>
-        <td>${roleTag}</td>
+        <td>${roleTag}${u.node_uid > 0 ? ` <span class="kp-badge kp-badge-manager" uk-tooltip="Synced from the parent node">Synced</span>` : ""}${u.blocked ? ` <span class="kp-status kp-status-error">Blocked</span>` : ""}</td>
         <td class="uk-text-center">${u.totp_enabled
             ? `<span uk-icon="icon: check; ratio: 0.9" style="color:var(--kp-success)"></span>`
             : `<span uk-icon="icon: close; ratio: 0.9" style="color:var(--kp-text-dim)"></span>`
@@ -70,6 +70,10 @@ export function userRow(u) {
         <td><span class="kp-muted">${escapeHtml(u.created)}</span></td>
         <td>
             <div class="uk-flex" style="gap:6px;justify-content:flex-end">
+                ${u.node_uid > 0 && u.id !== window.KP.user.id ? `
+                <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="toggle-block-user" data-uid="${u.id}" data-blocked="${u.blocked ? 1 : 0}" uk-tooltip="${u.blocked ? "Unblock" : "Block"} the User">
+                    <span uk-icon="icon: ${u.blocked ? "unlock" : "lock"};"></span>
+                </button>` : ""}
                 <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="edit-user" data-uid="${u.id}" title="Edit" uk-tooltip="Edit the User">
                     <span uk-icon="icon: pencil;"></span>
                 </button>
@@ -98,5 +102,24 @@ function wireUserActions(root) {
         const btn = e.target.closest('[data-action="edit-user"]');
         if (!btn) return;
         showEditUserModal(root, btn.dataset.uid);
+    });
+
+    root.addEventListener("click", async (e) => {
+        const btn = e.target.closest('[data-action="toggle-block-user"]');
+        if (!btn) return;
+        const blocked = btn.dataset.blocked !== "1";
+        const ok = await confirm(
+            blocked ? "Block User" : "Unblock User",
+            blocked
+                ? "Block this synced user? They are signed out here and can no longer sign in to this node from the parent."
+                : "Unblock this synced user?"
+        );
+        if (!ok) return;
+        try {
+            await api.put(`/users/${btn.dataset.uid}/blocked`, { blocked });
+            const fresh = normalizeUser(await api.get(`/users/${btn.dataset.uid}`));
+            btn.closest("tr").outerHTML = userRow(fresh);
+            toast.success(blocked ? "User blocked" : "User unblocked");
+        } catch (e) { toast.error(e.message); }
     });
 }

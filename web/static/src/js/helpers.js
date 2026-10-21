@@ -80,6 +80,8 @@ export const normalizeUser = (u) => ({
     totp_enabled: u.totp_enabled ?? false,
     notify_email: u.notify_email ?? false,
     notify_sms: u.notify_sms ?? false,
+    node_uid: u.node_uid ?? 0,
+    blocked: u.blocked ?? false,
     created: u.created ?? u.Created,
 });
 

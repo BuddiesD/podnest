@@ -21,12 +21,14 @@ export async function showEditUserModal(root, uid) {
 
     const isAdmin = window.KP?.user?.role === 99;
     const isSelf = Number(uid) === Number(window.KP?.user?.id);
+    const isSynced = user.node_uid > 0;
 
     const html = `
         <div id="kp-edit-user-modal" uk-modal>
             <div class="uk-modal-dialog kp-modal uk-modal-body uk-width-large">
                 <button class="uk-modal-close-default" type="button" uk-close></button>
                 <h3 class="kp-view-title">Edit User — ${user.uname}</h3>
+                ${isSynced ? `<p class="kp-muted uk-text-small uk-margin-small-top">Synced from the parent node — changes here are overwritten the next time this user signs in from the parent.</p>` : ""}
                 <form id="edit-user-form" class="uk-form-stacked uk-margin-top">
                     <div class="uk-grid-small" uk-grid>
                         ${isAdmin ? `
@@ -65,11 +67,12 @@ export async function showEditUserModal(root, uid) {
                                 <option value="99" ${user.role === 99 ? "selected" : ""}>Admin</option>
                             </select>
                         </div>` : ""}
+                        ${isSynced ? "" : `
                         <div class="uk-width-1-2@s">
                             <label class="kp-label">New Password</label>
                             <input class="uk-input kp-input" name="password" type="password" placeholder="••••••••" uk-tooltip="leave blank to keep">
-                        </div>
-                        ${isSelf ? `
+                        </div>`}
+                        ${isSelf && !isSynced ? `
                         <div class="uk-margin" id="edit-user-current-pw">
                             <label class="uk-form-label">Current Password</label>
                             <input class="uk-input kp-input" name="current_password" type="password" placeholder="••••••••" uk-tooltip="required when changing your own password">
@@ -81,9 +84,9 @@ export async function showEditUserModal(root, uid) {
                     </div>
                 </form>
 
-                <hr class="uk-divider-muted uk-margin-top">
+                <hr class="uk-divider-muted uk-margin-top" ${isSynced ? 'style="display:none"' : ""}>
 
-                <div id="totp-section">
+                <div id="totp-section" ${isSynced ? 'style="display:none"' : ""}>
                     <h4 class="uk-margin-small-bottom kp-view-title">Two-Factor Authentication</h4>
                     ${user.totp_enabled
             ? `<div class="uk-flex uk-flex-middle" style="gap:12px">
