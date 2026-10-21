@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "PodNest API",
-    "version": "1.32.16",
+    "version": "1.32.32",
     "description": "REST API for the PodNest admin panel. Every endpoint requires an authenticated session (cookie) with appropriate role. Path parameter `{id}` is the site ID except under the Users tag, where it is the user ID.\n\n**Note:** request/response schemas are being documented incrementally; endpoints not yet enriched show a generic body."
   },
   "servers": [
@@ -11169,7 +11169,7 @@
           "200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object", "properties": { "code": { "type": "string", "example": "ABCD-EFGH-JKLM-NPQR" }, "url": { "type": "string" }, "expires_in": { "type": "integer", "description": "Seconds until the code expires." } } } } } },
           "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-          "409": { "description": "This node already has a parent", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+          "409": { "description": "This node already has a parent, or has children", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },

@@ -101,6 +101,16 @@ func NodeLinkExists(db *sql.DB, linkID string) (bool, error) {
 	return n > 0, nil
 }
 
+// CountNodes returns how many child node links this instance holds, pending or paired.
+func CountNodes(db *sql.DB) (int, error) {
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM kppn_nodes`).Scan(&n); err != nil {
+		logger.Error("CountNodes: failed to count nodes: %v", err)
+		return 0, err
+	}
+	return n, nil
+}
+
 // CreateNodeOp records a pending operation on a child link, replacing any
 // operation already pending on it. Only the hash of the acknowledgement secret
 // is stored — the raw value travels to the child and back through the browser,

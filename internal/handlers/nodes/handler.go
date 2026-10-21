@@ -61,6 +61,18 @@ func (h *Handler) apiPairCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// a loop can only form when a node that has children becomes a child, so a
+	// node with children never takes a parent
+	children, err := db.CountNodes(h.DB)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	if children > 0 {
+		apiutil.ErrorMsg(w, http.StatusConflict, "a node with children cannot be paired under a parent")
+		return
+	}
+
 	code, err := nodelink.GeneratePairCode()
 	if err != nil {
 		logger.Error("apiPairCode: failed to generate code: %v", err)

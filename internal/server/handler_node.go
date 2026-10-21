@@ -155,6 +155,18 @@ func (s *Server) applyNodeAssertion(w http.ResponseWriter, r *http.Request, toke
 		if own {
 			return "", nil, errors.New("a node cannot be paired to itself")
 		}
+
+		// re-checked here, not just at code issue — children may have been added
+		// after the code was handed out, and a node with children taking a parent
+		// is the only way a loop can form
+		children, err := db.CountNodes(s.cfg.DB)
+		if err != nil {
+			return "", nil, errNodeLinkFailed
+		}
+		if children > 0 {
+			return "", nil, errors.New("a node with children cannot be paired under a parent")
+		}
+
 		if !nodelink.ValidPublicKey(peek.PubKey) {
 			return "", nil, errNodeLinkInvalid
 		}

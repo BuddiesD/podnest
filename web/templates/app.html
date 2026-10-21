@@ -284,7 +284,7 @@
 
     <!-- footer / logout -->
     <div class="kp-sidebar-footer">
-        {{if and (eq .User.Role 99) (not .HasParent)}}
+        {{if and (eq .User.Role 99) .CanPair}}
         <a href="#" class="kp-nav-link kp-pair-code-link">
             <span class="kp-nav-icon" uk-icon="icon: link; ratio: 0.9"></span>
             Generate Pairing Code
