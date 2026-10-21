@@ -113,6 +113,7 @@ Once running, the UI is available at: `http://your-host:9000`
 | `pdnctl upgrade` | Run `update`, pull all images, recreate every site pod on the fresh images, then prune stopped standalone containers and unused images |
 | `pdnctl start` / `pdnctl stop` / `pdnctl restart` | Control the PodNest service |
 | `pdnctl status` | Show the install summary and service status |
+| `pdnctl unparent` | Drop this node's parent link and every user synced from it |
 | `pdnctl uninstall` | Remove PodNest — keeps the user and site data |
 | `pdnctl uninstall --purge` | Remove PodNest, the dedicated user, and all site data |
 
