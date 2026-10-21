@@ -5,7 +5,7 @@
 "use strict";
 
 import { api } from './api.js';
-import { confirm, hideProgressModal, showProgressModal } from './helpers.js';
+import { confirm, escapeHtml, hideProgressModal, showProgressModal } from './helpers.js';
 import { parseHash, router } from './router.js';
 import { toast } from './toast.js';
 import { viewAdminLogs } from './views/admin-logs.js';
@@ -253,6 +253,74 @@ window.addEventListener("hashchange", () => {
         });
     });
 })();
+
+/* -- node pairing code ----------------------------------------------------- */
+(() => {
+    const links = document.querySelectorAll(".kp-pair-code-link");
+    if (!links.length) return;
+
+    links.forEach(el => {
+        el.addEventListener("click", async e => {
+            e.preventDefault();
+            try {
+                showPairCodeModal(await api.post("/nodes/pair-code"));
+            } catch (err) {
+                toast.error(err.message);
+            }
+        });
+    });
+})();
+
+function showPairCodeModal({ code, url, expires_in }) {
+    const id = "kp-pair-code-modal";
+    document.getElementById(id)?.remove();
+
+    const html = `
+        <div id="${id}" uk-modal>
+            <div class="uk-modal-dialog kp-modal uk-modal-body" style="max-width:460px">
+                <h3 class="uk-modal-title">Pairing Code</h3>
+                <p class="kp-muted uk-text-small">
+                    On the parent node, choose Add Node and enter this URL and code.
+                    The code works once, and only for this URL.
+                </p>
+                <label class="kp-label">URL</label>
+                <input class="uk-input kp-input" type="text" readonly value="${escapeHtml(url)}">
+                <label class="kp-label uk-margin-small-top">Code</label>
+                <input class="uk-input kp-input" type="text" readonly value="${escapeHtml(code)}"
+                    style="letter-spacing:0.2em;font-size:1.2rem;text-align:center">
+                <p class="kp-muted uk-text-small uk-margin-small-top">
+                    Expires in <span id="kp-pair-code-ttl"></span>
+                </p>
+                <div class="uk-flex uk-flex-right uk-margin-top">
+                    <button class="uk-button kp-btn-ghost uk-modal-close">Close</button>
+                </div>
+            </div>
+        </div>`;
+
+    document.body.insertAdjacentHTML("beforeend", html);
+    const el = document.getElementById(id);
+    const ttlEl = document.getElementById("kp-pair-code-ttl");
+
+    let left = expires_in;
+    const tick = () => {
+        if (left <= 0) {
+            ttlEl.textContent = "— expired";
+            clearInterval(timer);
+            return;
+        }
+        ttlEl.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+        left--;
+    };
+    const timer = setInterval(tick, 1000);
+    tick();
+
+    el.addEventListener("hidden", () => {
+        clearInterval(timer);
+        setTimeout(() => el.remove(), 300);
+    }, { once: true });
+
+    UIkit.modal(el).show();
+}
 
 /* -- boot ------------------------------------------------------------------ */
 const { view: initialView, params: initialParams } = parseHash();

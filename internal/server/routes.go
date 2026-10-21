@@ -17,6 +17,7 @@ import (
 	"podnest/internal/handlers/health"
 	"podnest/internal/handlers/logs"
 	malwarehandler "podnest/internal/handlers/malware"
+	"podnest/internal/handlers/nodes"
 	"podnest/internal/handlers/pma"
 	"podnest/internal/handlers/redirects"
 	"podnest/internal/handlers/rproxy"
@@ -181,6 +182,10 @@ func (s *Server) routes() http.Handler {
 	// users + TOTP
 	usersHandler := &users.Handler{DB: s.cfg.DB}
 	usersHandler.RegisterRoutes(api)
+
+	// node links
+	nodesHandler := &nodes.Handler{DB: s.cfg.DB}
+	nodesHandler.RegisterRoutes(api)
 
 	// settings + trusted proxies
 	settingsHandler := &settings.Handler{DB: s.cfg.DB, Proxy: s.proxy, Backup: s.backup, Warning: s.resource}

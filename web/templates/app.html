@@ -276,6 +276,12 @@
 
     <!-- footer / logout -->
     <div class="kp-sidebar-footer">
+        {{if and (eq .User.Role 99) (not .HasParent)}}
+        <a href="#" class="kp-nav-link kp-pair-code-link">
+            <span class="kp-nav-icon" uk-icon="icon: link; ratio: 0.9"></span>
+            Generate Pairing Code
+        </a>
+        {{end}}
         <a href="#" class="kp-nav-link kp-logout kp-logout-link">
             <span class="kp-nav-icon" uk-icon="icon: sign-out; ratio: 0.9"></span>
             Sign Out

@@ -38,6 +38,14 @@ func (s *Server) handleUI(w http.ResponseWriter, r *http.Request) {
 		data["LatestVersion"] = latest
 	}
 
+	// the pairing code link is offered only while this node has no parent
+	data["HasParent"] = false
+	if user != nil && user.Role == models.RoleAdmin {
+		if parent, err := db.GetNodeParent(s.cfg.DB); err == nil && parent != nil {
+			data["HasParent"] = true
+		}
+	}
+
 	// per-request CSP nonce for inline <script> tags
 	data["Nonce"] = cspNonce(r)
 
