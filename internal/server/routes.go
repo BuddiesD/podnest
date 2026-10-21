@@ -125,6 +125,9 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("/admin", auth.RequireAuth(s.cfg.DB,
 		auth.RequireAdmin(http.HandlerFunc(s.handleUI)),
 	))
+	mux.Handle("/node/ack", auth.RequireAuth(s.cfg.DB,
+		auth.RequireAdmin(http.HandlerFunc(s.handleNodeAck)),
+	))
 
 	// API sub-mux — all routes require a valid session via RequireAPIAuth
 	api := http.NewServeMux()

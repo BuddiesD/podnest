@@ -102,6 +102,23 @@ func (s *Server) handleNodeLink(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleNodeAck serves GET /node/ack, where a child sends the browser back
+// with an operation's acknowledgement in the URL fragment. The page posts it to
+// the admin-gated ack API under the admin's own session and CSRF token.
+func (s *Server) handleNodeAck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := web.Templates.ExecuteTemplate(w, "node-ack.html", map[string]any{
+		"Nonce":     cspNonce(r),
+		"CSRFToken": auth.CSRFTokenFromContext(r.Context()),
+	}); err != nil {
+		logger.Error("failed to execute node-ack.html template: %v", err)
+		http.Error(w, "template error", http.StatusInternalServerError)
+	}
+}
+
 // applyNodeAssertion verifies and applies a parent-signed assertion, returning
 // where to send the browser next and, for an SSO hop, the user signed in.
 // Errors are safe to show to the browser.
