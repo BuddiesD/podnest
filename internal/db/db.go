@@ -146,6 +146,16 @@ func migrateColumns(db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_malware_scans_started ON kppn_malware_scans (started)`,
 		`CREATE TABLE IF NOT EXISTS kppn_malware_findings (id INTEGER PRIMARY KEY AUTOINCREMENT, scan_id INTEGER NOT NULL REFERENCES kppn_malware_scans(id) ON DELETE CASCADE, site_id INTEGER NOT NULL REFERENCES kppn_sites(id) ON DELETE CASCADE, path TEXT NOT NULL, signature TEXT NOT NULL, quarantined DATETIME)`,
 		`CREATE INDEX IF NOT EXISTS idx_malware_findings_scan ON kppn_malware_findings (scan_id)`,
+		// node links
+		`ALTER TABLE kppn_users ADD COLUMN node_uid INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE kppn_users ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0`,
+		`CREATE INDEX IF NOT EXISTS idx_users_node_uid ON kppn_users (node_uid)`,
+		`CREATE TABLE IF NOT EXISTS kppn_nodes (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, url TEXT NOT NULL, link_id TEXT NOT NULL UNIQUE, priv_key TEXT NOT NULL, status INTEGER NOT NULL DEFAULT 1, created DATETIME NOT NULL DEFAULT (datetime('now')), updated DATETIME)`,
+		`CREATE TABLE IF NOT EXISTS kppn_node_ops (id INTEGER PRIMARY KEY AUTOINCREMENT, node_id INTEGER NOT NULL REFERENCES kppn_nodes(id) ON DELETE CASCADE, op INTEGER NOT NULL, ack_hash TEXT NOT NULL UNIQUE, new_url TEXT NOT NULL DEFAULT '', new_key TEXT NOT NULL DEFAULT '', expires_at DATETIME NOT NULL)`,
+		`CREATE INDEX IF NOT EXISTS idx_node_ops_node ON kppn_node_ops (node_id)`,
+		`CREATE TABLE IF NOT EXISTS kppn_node_parent (id INTEGER PRIMARY KEY CHECK(id = 1), link_id TEXT NOT NULL, parent_pub TEXT NOT NULL, created DATETIME NOT NULL DEFAULT (datetime('now')), updated DATETIME)`,
+		`CREATE TABLE IF NOT EXISTS kppn_node_pair_codes (code_hash TEXT PRIMARY KEY, origin TEXT NOT NULL, expires_at DATETIME NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS kppn_node_nonces (nonce TEXT PRIMARY KEY, expires_at DATETIME NOT NULL)`,
 	}
 
 	for _, m := range migrations {
@@ -773,4 +783,46 @@ CREATE TABLE IF NOT EXISTS kppn_malware_findings (
 );
 
 CREATE INDEX IF NOT EXISTS idx_malware_findings_scan ON kppn_malware_findings (scan_id);
+
+CREATE TABLE IF NOT EXISTS kppn_nodes (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    name     TEXT    NOT NULL,
+    url      TEXT    NOT NULL,
+    link_id  TEXT    NOT NULL UNIQUE,
+    priv_key TEXT    NOT NULL,
+    status   INTEGER NOT NULL DEFAULT 1,
+    created  DATETIME NOT NULL DEFAULT (datetime('now')),
+    updated  DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS kppn_node_ops (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    node_id    INTEGER NOT NULL REFERENCES kppn_nodes(id) ON DELETE CASCADE,
+    op         INTEGER NOT NULL,
+    ack_hash   TEXT    NOT NULL UNIQUE,
+    new_url    TEXT    NOT NULL DEFAULT '',
+    new_key    TEXT    NOT NULL DEFAULT '',
+    expires_at DATETIME NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_node_ops_node ON kppn_node_ops (node_id);
+
+CREATE TABLE IF NOT EXISTS kppn_node_parent (
+    id         INTEGER PRIMARY KEY CHECK(id = 1),
+    link_id    TEXT    NOT NULL,
+    parent_pub TEXT    NOT NULL,
+    created    DATETIME NOT NULL DEFAULT (datetime('now')),
+    updated    DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS kppn_node_pair_codes (
+    code_hash  TEXT PRIMARY KEY,
+    origin     TEXT NOT NULL,
+    expires_at DATETIME NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS kppn_node_nonces (
+    nonce      TEXT PRIMARY KEY,
+    expires_at DATETIME NOT NULL
+);
 `

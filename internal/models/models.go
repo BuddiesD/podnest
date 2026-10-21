@@ -139,6 +139,50 @@ const (
 	BackupTypeS3    = 2
 )
 
+// node link statuses
+const (
+	NodeStatusPending = 1
+	NodeStatusPaired  = 2
+)
+
+// node link operations awaiting a child's acknowledgement
+const (
+	NodeOpPair   = 1
+	NodeOpUpdate = 2
+	NodeOpUnpair = 3
+)
+
+// Node is a child PodNest instance paired beneath this one.
+type Node struct {
+	ID      int64
+	Name    string
+	URL     string
+	LinkID  string
+	PrivKey string
+	Status  int
+	Created time.Time
+	Updated *time.Time
+}
+
+// NodeOp is a pending change to a child link, committed only once the child
+// acknowledges it.
+type NodeOp struct {
+	ID        int64
+	NodeID    int64
+	Op        int
+	NewURL    string
+	NewKey    string
+	ExpiresAt time.Time
+}
+
+// NodeParent is this instance's link to its parent node.
+type NodeParent struct {
+	LinkID    string
+	ParentPub string
+	Created   time.Time
+	Updated   *time.Time
+}
+
 // user data structure
 type User struct {
 	ID          int64
@@ -155,6 +199,8 @@ type User struct {
 	TOTPEnabled bool
 	NotifyEmail bool
 	NotifySMS   bool
+	NodeUID     int64 // 0 = local user; >0 = synced from the parent node's user with this ID
+	Blocked     bool
 	Created     time.Time
 	Updated     *time.Time
 }
