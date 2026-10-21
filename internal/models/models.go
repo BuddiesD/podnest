@@ -183,6 +183,15 @@ type NodeParent struct {
 	Updated   *time.Time
 }
 
+// NodeUser is a parent admin carried down to a child node on each SSO hop.
+type NodeUser struct {
+	NodeUID int64  `json:"uid"`
+	FName   string `json:"fname"`
+	LName   string `json:"lname"`
+	Email   string `json:"email"`
+	Phone   string `json:"phone"`
+}
+
 // user data structure
 type User struct {
 	ID          int64

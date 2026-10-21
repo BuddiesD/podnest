@@ -57,12 +57,12 @@ func GetUserByUsername(db *sql.DB, uname string) (*models.User, error) {
 
 	// query the database for a user matching the provided username and scan the result into the user struct
 	err := db.QueryRow(`
-		SELECT id, uname, pword, uhash, fname, lname, email, phone, role, totp_secret, totp_salt, totp_enabled, notify_email, notify_sms, created, updated
+		SELECT id, uname, pword, uhash, fname, lname, email, phone, role, totp_secret, totp_salt, totp_enabled, notify_email, notify_sms, node_uid, blocked, created, updated
 		FROM kppn_users WHERE uname = ?`, uname,
 	).Scan(
 		&u.ID, &u.UName, &u.PWord, &u.UHash, &u.FName, &u.LName,
 		&u.Email, &u.Phone, &u.Role, &u.TOTPSecret, &u.TOTPSalt, &u.TOTPEnabled,
-		&u.NotifyEmail, &u.NotifySMS, &u.Created, &u.Updated,
+		&u.NotifyEmail, &u.NotifySMS, &u.NodeUID, &u.Blocked, &u.Created, &u.Updated,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -89,7 +89,7 @@ func GetUserByID(db *sql.DB, id int64) (*models.User, error) {
 	).Scan(
 		&u.ID, &u.UName, &u.PWord, &u.UHash, &u.FName, &u.LName,
 		&u.Email, &u.Phone, &u.Role, &u.TOTPSecret, &u.TOTPSalt, &u.TOTPEnabled,
-		&u.NotifyEmail, &u.NotifySMS, &u.Created, &u.Updated,
+		&u.NotifyEmail, &u.NotifySMS, &u.NodeUID, &u.Blocked, &u.Created, &u.Updated,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -108,7 +108,7 @@ func GetAllUsers(db *sql.DB) ([]*models.User, error) {
 
 	// query the database for all users ordered by creation time and capture the result set
 	rows, err := db.Query(`
-		SELECT id, uname, uhash, fname, lname, email, phone, role, totp_enabled, notify_email, notify_sms, created, updated
+		SELECT id, uname, uhash, fname, lname, email, phone, role, totp_enabled, notify_email, notify_sms, node_uid, blocked, created, updated
 		FROM kppn_users ORDER BY created ASC`,
 	)
 	if err != nil {
@@ -124,7 +124,7 @@ func GetAllUsers(db *sql.DB) ([]*models.User, error) {
 		if err := rows.Scan(
 			&u.ID, &u.UName, &u.UHash, &u.FName, &u.LName,
 			&u.Email, &u.Phone, &u.Role, &u.TOTPEnabled,
-			&u.NotifyEmail, &u.NotifySMS, &u.Created, &u.Updated,
+			&u.NotifyEmail, &u.NotifySMS, &u.NodeUID, &u.Blocked, &u.Created, &u.Updated,
 		); err != nil {
 			logger.Error("GetAllUsers: failed to scan user row: %v", err)
 			return nil, err
