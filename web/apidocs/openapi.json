@@ -104,6 +104,10 @@
     {
       "name": "SFTP",
       "description": "Per-site SFTP credential regeneration."
+    },
+    {
+      "name": "Nodes",
+      "description": "Parent/child node links: pairing codes, child node management, signed link operations, and SSO hops into children."
     }
   ],
   "components": {
@@ -11130,6 +11134,150 @@
         "parameters": [
           { "name": "id", "in": "path", "required": true, "description": "Site ID.", "schema": { "type": "string" } },
           { "name": "findingID", "in": "path", "required": true, "description": "Malware finding ID.", "schema": { "type": "string" } }
+        ]
+      }
+    },
+    "/users/{id}/blocked": {
+      "put": {
+        "tags": ["Users"],
+        "summary": "Block or unblock a synced user",
+        "description": "Admin only. Sets the blocked flag on a user synced from this node's parent. A blocked user's sessions end immediately and their SSO hops from the parent are refused; the flag survives every sync. Local users cannot be blocked, and an admin cannot block themselves.",
+        "operationId": "put_users_id_blocked",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "required": ["blocked"], "properties": { "blocked": { "type": "boolean" } } } } }
+        },
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object", "properties": { "blocked": { "type": "boolean" } } } } } },
+          "400": { "description": "Not a synced user, or own account", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "User not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "User ID.", "schema": { "type": "string" } }
+        ]
+      }
+    },
+    "/nodes/pair-code": {
+      "post": {
+        "tags": ["Nodes"],
+        "summary": "Generate a pairing code",
+        "description": "Admin only. Issues a single-use pairing code that expires after 5 minutes and is bound to the URL the request was made on. Issuing a new code replaces any outstanding one. Refused once this node has a parent.",
+        "operationId": "post_nodes_pair_code",
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object", "properties": { "code": { "type": "string", "example": "ABCD-EFGH-JKLM-NPQR" }, "url": { "type": "string" }, "expires_in": { "type": "integer", "description": "Seconds until the code expires." } } } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "This node already has a parent", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/nodes": {
+      "get": {
+        "tags": ["Nodes"],
+        "summary": "List child nodes",
+        "description": "Admin only. Status 1 = pending, 2 = paired.",
+        "operationId": "get_nodes",
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "integer" }, "name": { "type": "string" }, "url": { "type": "string" }, "status": { "type": "integer", "enum": [1, 2] }, "created": { "type": "string" } } } } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "post": {
+        "tags": ["Nodes"],
+        "summary": "Add a child node",
+        "description": "Admin only. Records a pending child with a fresh link keypair and returns a link that carries the signed pairing assertion to the child. Open it in the browser; the child redirects back to /node/ack, which marks the node as paired.",
+        "operationId": "post_nodes",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "required": ["name", "url", "code"], "properties": { "name": { "type": "string", "maxLength": 100 }, "url": { "type": "string", "description": "The child's URL, exactly as shown with its pairing code." }, "code": { "type": "string" } } } } }
+        },
+        "responses": {
+          "201": { "description": "Created", "content": { "application/json": { "schema": { "type": "object", "properties": { "id": { "type": "integer" }, "link": { "type": "string" } } } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/nodes/ack": {
+      "post": {
+        "tags": ["Nodes"],
+        "summary": "Acknowledge a node operation",
+        "description": "Admin only. Commits the pending pair, update, or unpair operation that matches the acknowledgement secret the child returned. Each secret can be used once and expires after 5 minutes. Op 1 = pair, 2 = update, 3 = unpair.",
+        "operationId": "post_nodes_ack",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "required": ["ack"], "properties": { "ack": { "type": "string" } } } } }
+        },
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object", "properties": { "id": { "type": "integer" }, "name": { "type": "string" }, "op": { "type": "integer", "enum": [1, 2, 3] } } } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "No matching pending operation", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/nodes/{id}": {
+      "put": {
+        "tags": ["Nodes"],
+        "summary": "Edit a child node",
+        "description": "Admin only. A rename applies immediately. A URL change or re-key (paired nodes only) returns a link carrying a signed update to the child; the new URL and key take effect only once the child acknowledges it.",
+        "operationId": "put_nodes_id",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "properties": { "name": { "type": "string", "maxLength": 100 }, "url": { "type": "string" }, "rekey": { "type": "boolean" } } } } }
+        },
+        "responses": {
+          "200": { "description": "Success — link is present when the change has to be applied on the child", "content": { "application/json": { "schema": { "type": "object", "properties": { "id": { "type": "integer" }, "link": { "type": "string" } } } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Node not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Node is not paired", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Node ID.", "schema": { "type": "string" } }
+        ]
+      },
+      "delete": {
+        "tags": ["Nodes"],
+        "summary": "Remove a child node",
+        "description": "Admin only. A pending node is removed immediately. A paired node returns a link carrying a signed unpair; the child drops this parent and its synced users, and the node is removed once that is acknowledged. With force=1 the node is removed here without contacting the child.",
+        "operationId": "delete_nodes_id",
+        "responses": {
+          "200": { "description": "Unpair link to open", "content": { "application/json": { "schema": { "type": "object", "properties": { "id": { "type": "integer" }, "link": { "type": "string" } } } } } },
+          "204": { "description": "Removed" },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Node not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Node ID.", "schema": { "type": "string" } },
+          { "name": "force", "in": "query", "required": false, "description": "1 removes the node here without contacting the child.", "schema": { "type": "string", "enum": ["1"] } }
+        ]
+      }
+    },
+    "/nodes/{id}/sso": {
+      "post": {
+        "tags": ["Nodes"],
+        "summary": "SSO into a child node",
+        "description": "Admin only, paired nodes only. Returns a link carrying a signed, single-use SSO assertion (valid for 60 seconds) for the calling admin, together with this node's current admin list. The child syncs its users against that list and starts a session.",
+        "operationId": "post_nodes_id_sso",
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object", "properties": { "link": { "type": "string" } } } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Node not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Node is not paired", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Node ID.", "schema": { "type": "string" } }
         ]
       }
     }
