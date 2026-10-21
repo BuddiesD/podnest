@@ -91,6 +91,16 @@ func DeleteNode(db *sql.DB, id int64) error {
 	return err
 }
 
+// NodeLinkExists reports whether linkID belongs to one of this instance's own child links.
+func NodeLinkExists(db *sql.DB, linkID string) (bool, error) {
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM kppn_nodes WHERE link_id = ?`, linkID).Scan(&n); err != nil {
+		logger.Error("NodeLinkExists: failed to check link %s: %v", linkID, err)
+		return false, err
+	}
+	return n > 0, nil
+}
+
 // CreateNodeOp records a pending operation on a child link, replacing any
 // operation already pending on it. Only the hash of the acknowledgement secret
 // is stored — the raw value travels to the child and back through the browser,

@@ -125,6 +125,10 @@ func (h *Handler) apiAddNode(w http.ResponseWriter, r *http.Request) {
 		apiutil.ErrorMsg(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if origin == nodelink.RequestOrigin(r) {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "a node cannot be added as its own child")
+		return
+	}
 	code := nodelink.NormalizePairCode(req.Code)
 	if code == "" {
 		apiutil.ErrorMsg(w, http.StatusBadRequest, "pairing code is required")

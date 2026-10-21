@@ -144,6 +144,17 @@ func (s *Server) applyNodeAssertion(w http.ResponseWriter, r *http.Request, toke
 		if parent != nil {
 			return "", nil, errors.New("this node already has a parent")
 		}
+
+		// a pair carrying one of this instance's own child links is the instance
+		// pairing with itself, whatever URL reached it — it would sign its own SSO
+		// hops and sync its users back into itself
+		own, err := db.NodeLinkExists(s.cfg.DB, peek.LinkID)
+		if err != nil {
+			return "", nil, errNodeLinkFailed
+		}
+		if own {
+			return "", nil, errors.New("a node cannot be paired to itself")
+		}
 		if !nodelink.ValidPublicKey(peek.PubKey) {
 			return "", nil, errNodeLinkInvalid
 		}
