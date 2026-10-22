@@ -388,6 +388,24 @@ func (h *Handler) apiTOTPSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// a synced user's second factor lives on the parent
+	if target.NodeUID > 0 {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "synced node users cannot set up TOTP")
+		return
+	}
+
+	// re-enrolling replaces a working factor, so a session alone must not be enough
+	if target.TOTPEnabled {
+		var req struct {
+			CurrentPassword string `json:"current_password"`
+			Code            string `json:"code"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if !h.reauthTOTP(w, target, req.CurrentPassword, req.Code) {
+			return
+		}
+	}
+
 	secret, err := auth.GenerateTOTPSecret()
 	if err != nil {
 		logger.Error("apiTOTPSetup: failed to generate secret for user %d: %v", target.ID, err)
@@ -499,6 +517,19 @@ func (h *Handler) apiTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// stripping your own factor must prove more than a session, or a hijacked
+	// session could remove 2FA; an admin clearing someone else's is the recovery path
+	if caller.ID == target.ID {
+		var req struct {
+			CurrentPassword string `json:"current_password"`
+			Code            string `json:"code"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if !h.reauthTOTP(w, target, req.CurrentPassword, req.Code) {
+			return
+		}
+	}
+
 	if err := db.DisableTOTP(h.DB, target.ID); err != nil {
 		logger.Error("apiTOTPDisable: failed for user %d: %v", target.ID, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
@@ -516,6 +547,34 @@ func (h *Handler) apiTOTPDisable(w http.ResponseWriter, r *http.Request) {
 
 	logger.Debug("TOTP disabled for user %d by caller %d", target.ID, caller.ID)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// reauthTOTP verifies the user's current password and, when TOTP is enabled, a
+// current TOTP or backup code. It writes a 403 and returns false on failure.
+func (h *Handler) reauthTOTP(w http.ResponseWriter, target *models.User, password, code string) bool {
+	if !auth.CheckPassword(target.PWord, password) {
+		logger.Error("reauthTOTP: current password mismatch for user %d", target.ID)
+		apiutil.ErrorMsg(w, http.StatusForbidden, "current password is incorrect")
+		return false
+	}
+	if !target.TOTPEnabled {
+		return true
+	}
+
+	// the key is derived from the password just proven, so this works after a restart
+	secret, err := auth.DecryptTOTPSecret(auth.DeriveTOTPKey(password, target.TOTPSalt), target.TOTPSecret)
+	if err == nil {
+		if counter, valid := auth.VerifyTOTP(secret, code); valid && db.ConsumeTOTPCounter(h.DB, target.ID, counter) {
+			return true
+		}
+	}
+	if used, _ := db.UseBackupCode(h.DB, target.ID, code); used {
+		return true
+	}
+
+	logger.Warn("reauthTOTP: invalid TOTP/backup code for user %d", target.ID)
+	apiutil.ErrorMsg(w, http.StatusForbidden, "invalid TOTP code")
+	return false
 }
 
 func (h *Handler) resolveUser(w http.ResponseWriter, r *http.Request) (*models.User, bool) {

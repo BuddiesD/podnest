@@ -92,7 +92,11 @@ export async function showEditUserModal(root, uid) {
             ? `<div class="uk-flex uk-flex-middle" style="gap:12px">
                             <span class="kp-badge kp-badge-admin" style="font-size:0.75rem">Enabled</span>
                             <button id="totp-disable-btn" class="uk-button kp-btn-secondary kp-btn-sm">Disable TOTP</button>
-                           </div>`
+                           </div>
+                           ${isSelf ? `<div class="uk-flex uk-margin-small-top" style="gap:8px">
+                            <input class="uk-input kp-input" id="totp-disable-password" type="password" placeholder="Current password">
+                            <input class="uk-input kp-input" id="totp-disable-code" type="text" inputmode="numeric" placeholder="TOTP or backup code">
+                           </div>` : ""}`
             : `<div class="uk-flex uk-flex-middle" style="gap:12px">
                             <span class="kp-badge kp-badge-manager" style="font-size:0.75rem">Disabled</span>
                             <button id="totp-setup-btn" class="uk-button kp-btn-primary kp-btn-sm">Enable TOTP</button>
@@ -208,7 +212,10 @@ export async function showEditUserModal(root, uid) {
         disableBtn.addEventListener("click", async () => {
             disableBtn.disabled = true;
             try {
-                await api.delete(`/users/${uid}/totp`);
+                await api.delete(`/users/${uid}/totp`, isSelf ? {
+                    current_password: document.getElementById("totp-disable-password").value,
+                    code: document.getElementById("totp-disable-code").value.trim(),
+                } : undefined);
                 toast.success("TOTP disabled");
                 modal.hide();
                 document.getElementById("kp-edit-user-modal")?.remove();
