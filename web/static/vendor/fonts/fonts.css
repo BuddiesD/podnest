@@ -1,0 +1,15 @@
+/* 
+PodNest - Self-hosted site management platform
+Copyright (c) 2026 Kevin Pirnie <iam@kevinpirnie.com>
+Licensed under the MIT License. See LICENSE file in the project root for full license text.
+*/
+
+@font-face { font-family: 'Orbitron'; font-style: normal; font-weight: 700; font-display: swap; src: url('/static/vendor/fonts/orbitron-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Orbitron'; font-style: normal; font-weight: 900; font-display: swap; src: url('/static/vendor/fonts/orbitron-latin-900-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 400; font-display: swap; src: url('/static/vendor/fonts/space-grotesk-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 500; font-display: swap; src: url('/static/vendor/fonts/space-grotesk-latin-500-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 600; font-display: swap; src: url('/static/vendor/fonts/space-grotesk-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 700; font-display: swap; src: url('/static/vendor/fonts/space-grotesk-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('/static/vendor/fonts/jetbrains-mono-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url('/static/vendor/fonts/jetbrains-mono-latin-500-normal.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 600; font-display: swap; src: url('/static/vendor/fonts/jetbrains-mono-latin-600-normal.woff2') format('woff2'); }

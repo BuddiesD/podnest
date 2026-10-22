@@ -12,6 +12,7 @@
   },
   "devDependencies": {
     "@fontsource/jetbrains-mono": "latest",
+    "@scalar/api-reference": "latest",
     "@fontsource/orbitron": "latest",
     "@fontsource/space-grotesk": "latest",
     "codemirror": "^5",
@@ -25,7 +26,8 @@
     "uikit": "latest"
   },
   "allowScripts": {
-    "esbuild@0.28.2": true
+    "esbuild@0.28.2": true,
+    "vue-demi@0.14.10": true
   },
   "dependencies": {
     "npm": "^12.2.0"

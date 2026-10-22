@@ -17,7 +17,9 @@ const copy = (src, dst) => {
 // uikit
 copy('uikit/dist/css/uikit.min.css', 'uikit/uikit.min.css');
 copy('uikit/dist/js/uikit.min.js', 'uikit/uikit.min.js');
-copy('uikit/dist/js/uikit-icons.min.js', 'uikit/uikit-icons.min.js');
+
+// scalar api reference — the self-contained browser build
+copy('@scalar/api-reference/dist/browser/standalone.js', 'scalar/standalone.js');
 
 // codemirror 5 core, theme, mode autoloader, and every mode's scripts
 copy('codemirror/lib/codemirror.js', 'codemirror/lib/codemirror.js');
@@ -40,3 +42,6 @@ for (const [family, weights] of Object.entries(fonts)) {
         copy(`@fontsource/${family}/files/${family}-latin-${w}-normal.woff2`, `fonts/${family}-latin-${w}-normal.woff2`);
     }
 }
+
+// the panel's @font-face rules, standalone for pages that do not load app.css
+cpSync('web/static/src/css/fonts.css', join(out, 'fonts/fonts.css'));
