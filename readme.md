@@ -100,6 +100,8 @@ pdnctl install --user USER --version latest|dev|beta
 
 The timezone is pulled from the host, site data lives at `/home/<user>/sites`, and the install details are stored in `/etc/podnest/install.json` — every command after `install` needs zero flags.
 
+`install` also generates `/home/<user>/.pn.env`, holding the `PN_SECRET_KEY` that encrypts node link private keys at rest. It lives outside the site data directory on purpose — back it up with your data, and never change or delete it, or every paired child node will need to be re-paired.
+
 Once running, the UI is available at: `http://your-host:9000`
 
 ### Commands
@@ -110,7 +112,7 @@ Once running, the UI is available at: `http://your-host:9000`
 | `pdnctl update` | Self-update the `pdnctl` binary, then pull the newest image on the current channel and restart |
 | `pdnctl update --version <latest\|dev\|beta>` | Switch channels — future updates track the new channel |
 | `pdnctl pull-images` | Pull updated versions of every image already on the host |
-| `pdnctl upgrade` | Run `update`, pull all images, recreate every site pod on the fresh images, then prune stopped standalone containers and unused images |
+| `pdnctl upgrade` | Create `~/.pn.env` and add it to the service unit if missing, run `update`, pull all images, recreate every site pod on the fresh images, then prune stopped standalone containers and unused images |
 | `pdnctl start` / `pdnctl stop` / `pdnctl restart` | Control the PodNest service |
 | `pdnctl status` | Show the install summary and service status |
 | `pdnctl unparent` | Drop this node's parent link and every user synced from it |
@@ -161,6 +163,8 @@ services:
       - /your/persistent/path:/opt/podnest:z
     tmpfs:
       - /tmp
+    env_file:
+      - ~/.pn.env
     environment:
       - TZ=${TZ:-America/New_York}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -180,6 +184,15 @@ podman-compose up -d
 ```
 
 **Volume mount and the `:z` label** — the `:z` flag on the `/opt/podnest` mount is a SELinux relabeling option required on systems running SELinux in enforcing mode. It is safe to omit on systems that do not use SELinux.
+
+**Secret key (`PN_SECRET_KEY`)** — PodNest encrypts node link private keys at rest with the key in `PN_SECRET_KEY`. Keep the env file outside the `/opt/podnest` volume, so a copy of the data directory alone does not carry it. Create it once before the first start:
+
+```bash
+printf 'PN_SECRET_KEY=%s\n' "$(openssl rand -hex 32)" > ~/.pn.env
+chmod 600 ~/.pn.env
+```
+
+Never change or delete it once set, or every paired child node will need to be re-paired. Without it PodNest still runs, but stores node keys in plaintext and logs a warning at startup. Existing plaintext keys are encrypted automatically on the first start with the key present.
 
 ### Running with systemd (Recommended for Production)
 
@@ -206,6 +219,7 @@ ExecStart=/usr/bin/podman run \
     -v /run/podman/podman.sock:/run/podman/podman.sock:rw \
     -v /home/sites:/opt/podnest:z \
     --tmpfs /tmp \
+    --env-file /root/.pn.env \
     -e TZ=America/New_York \
     -e LOG_LEVEL=INFO \
     ghcr.io/kpirnie/podnest:latest serve --app-path /opt/podnest --port 9000 --socket /run/podman/podman.sock
@@ -215,7 +229,7 @@ ExecStop=/usr/bin/podman stop podnest
 WantedBy=multi-user.target
 ```
 
-Replace the persistent path with the host path where your site data should persist. Enable and start the service:
+Replace the persistent path with the host path where your site data should persist, and create `/root/.pn.env` as described under **Secret key** above. Enable and start the service:
 
 ```bash
 systemctl daemon-reload
@@ -265,11 +279,14 @@ You will be prompted for username, name, email, phone, and a password. This only
 ### Start the Server
 
 ```bash
+export PN_SECRET_KEY="$(grep PN_SECRET_KEY ~/.pn.env | cut -d= -f2)"
 ./podnest serve \
   --app-path /opt/podnest \
   --port 8080 \
   --socket /run/podman/podman.sock
 ```
+
+`PN_SECRET_KEY` encrypts node link private keys at rest — see **Secret key** under Docker Compose for how to create `~/.pn.env`.
 
 ### Available Commands and Flags
 
