@@ -7,6 +7,8 @@
 import { api } from '../api.js';
 import { escapeHtml, fmtBytes } from '../helpers.js';
 import { showCreateSiteModal } from '../modals/create-site.js';
+import { toast } from '../toast.js';
+import { openNodeLink } from './nodes.js';
 import { loadChartJS, openDrilldown } from './site-stats.js';
 import { siteCard } from './sites.js';
 
@@ -46,15 +48,17 @@ function wireHostStats() {
 }
 
 export async function viewDashboard(root) {
-    const [sites, traffic] = await Promise.all([
+    const [sites, traffic, nodes] = await Promise.all([
         api.get("/sites").catch(() => []),
         api.get("/stats/traffic").catch(() => null),
+        window.KP?.user?.role === 99 ? api.get("/nodes").catch(() => []) : [],
     ]);
     
     const running = sites.filter((s) => s.SiteType !== 6 && s.SiteStatus === 1).length;
     const proxies = sites.filter((s) => s.SiteType === 6).length;
     const errored = sites.filter((s) => s.SiteType !== 6 && s.SiteStatus === 4).length;
     const isAdmin = window.KP?.user?.role === 99;
+    const paired = nodes.filter((n) => n.status === 2);
 
     root.innerHTML = `
 
@@ -162,6 +166,16 @@ export async function viewDashboard(root) {
             </div>
         </div>
         ` : ""}
+        
+        <!-- paired nodes — admin only -->
+        ${paired.length ? `
+        <div class="uk-flex uk-flex-wrap uk-margin-medium-bottom" id="dash-nodes" style="gap:8px">
+            ${paired.map((n) => `
+            <button class="uk-button kp-btn-primary kp-btn-sm" data-action="dash-node-open" data-nid="${n.id}" uk-tooltip="Open the Node">
+                <span uk-icon="icon: sign-in;"></span> ${escapeHtml(n.name)}
+            </button>`).join("")}
+        </div>
+        ` : ""}
 
         <!-- global traffic -->
         <div class="kp-view-header uk-margin-top">
@@ -267,6 +281,16 @@ export async function viewDashboard(root) {
 
     // fire up the host stats
     if (isAdmin) wireHostStats();
+
+    // open a paired node in a new tab
+    document.getElementById("dash-nodes")?.addEventListener("click", async (e) => {
+        const btn = e.target.closest('[data-action="dash-node-open"]');
+        if (!btn) return;
+        try {
+            const res = await api.post(`/nodes/${btn.dataset.nid}/sso`);
+            openNodeLink(res.link);
+        } catch (err) { toast.error(err.message); }
+    });
 
     // render hits-per-hour chart once Chart.js is ready
     if (traffic?.hits_per_hour?.length) {

@@ -151,7 +151,7 @@ async function onNodeAction(e, root, nodes) {
 
 // openNodeLink opens a node link in a new tab with no opener and no referrer,
 // so the child can neither script this tab nor learn this parent from the request
-function openNodeLink(link) {
+export function openNodeLink(link) {
     const a = document.createElement("a");
     a.href = link;
     a.target = "_blank";
