@@ -31,6 +31,12 @@ services:
     tmpfs:
       - /tmp
 
+    # holds PN_SECRET_KEY, which encrypts node link keys at rest — keep it outside
+    # the /opt/podnest volume and never change it once set
+    # generate one with: printf 'PN_SECRET_KEY=%s\n' "$(openssl rand -hex 32)" > ~/.pn.env && chmod 600 ~/.pn.env
+    env_file:
+      - ~/.pn.env
+
     # change this to match whatever timezone you like
     environment:
       - TZ=${TZ:-America/New_York}
