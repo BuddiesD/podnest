@@ -17,6 +17,12 @@ import (
 	"podnest/web"
 )
 
+// loginMessages maps the ?msg= codes the panel redirects with to the text shown
+// on the login page, so the query string cannot put arbitrary words there.
+var loginMessages = map[string]string{
+	"expired": "Your session has expired — please log in again",
+}
+
 // handleUI serves the single-page shell for all UI routes
 func (s *Server) handleUI(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
@@ -76,7 +82,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		// install script is allowed to execute under the page's CSP
 		loginData := map[string]any{"Nonce": cspNonce(r)}
 		loginData["CSRF"] = auth.IssueLoginCSRF(w, r)
-		if msg := r.URL.Query().Get("msg"); msg != "" {
+		if msg, ok := loginMessages[r.URL.Query().Get("msg")]; ok {
 			loginData["Error"] = msg
 		}
 		if err := web.Templates.ExecuteTemplate(w, "login.html", loginData); err != nil {

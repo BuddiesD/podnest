@@ -18,7 +18,7 @@ export const api = {
             clearTimeout(timer);
             const data = res.status === 204 ? null : await res.json().catch(() => null);
             if (res.status === 401) {
-                window.location.href = '/login?msg=Your+session+has+expired+%E2%80%94+please+log+in+again';
+                window.location.href = '/login?msg=expired';
                 return null;
             }
             if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
