@@ -13,6 +13,7 @@
   "devDependencies": {
     "@fontsource/jetbrains-mono": "latest",
     "@scalar/api-reference": "latest",
+    "chart.js": "latest",
     "@fontsource/orbitron": "latest",
     "@fontsource/space-grotesk": "latest",
     "codemirror": "^5",

@@ -21,6 +21,9 @@ copy('uikit/dist/js/uikit.min.js', 'uikit/uikit.min.js');
 // scalar api reference — the self-contained browser build
 copy('@scalar/api-reference/dist/browser/standalone.js', 'scalar/standalone.js');
 
+// chart.js
+copy('chart.js/dist/chart.umd.min.js', 'chartjs/chart.umd.min.js');
+
 // codemirror 5 core, theme, mode autoloader, and every mode's scripts
 copy('codemirror/lib/codemirror.js', 'codemirror/lib/codemirror.js');
 copy('codemirror/lib/codemirror.css', 'codemirror/lib/codemirror.css');

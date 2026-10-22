@@ -27,7 +27,7 @@ export function loadChartJS() {
     _chartReady = new Promise((resolve) => {
         if (window.Chart) { resolve(); return; }
         const s = document.createElement('script');
-        s.src = 'https://cdn.jsdelivr.net/npm/chart.js@latest/dist/chart.umd.min.js';
+        s.src = '/static/vendor/chartjs/chart.umd.min.js';
         s.onload = resolve;
         s.onerror = resolve;
         document.body.appendChild(s);
