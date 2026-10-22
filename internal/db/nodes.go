@@ -14,10 +14,15 @@ import (
 
 // CreateNode inserts a child node link.
 func CreateNode(db *sql.DB, n *models.Node) error {
+	priv, err := sealNodeKey(n.PrivKey)
+	if err != nil {
+		logger.Error("CreateNode: failed to seal key for node '%s': %v", n.Name, err)
+		return err
+	}
 	res, err := db.Exec(`
 		INSERT INTO kppn_nodes (name, url, link_id, priv_key, status)
 		VALUES (?, ?, ?, ?, ?)`,
-		n.Name, n.URL, n.LinkID, n.PrivKey, n.Status,
+		n.Name, n.URL, n.LinkID, priv, n.Status,
 	)
 	if err != nil {
 		logger.Error("CreateNode: failed to create node '%s': %v", n.Name, err)
@@ -47,6 +52,10 @@ func GetAllNodes(db *sql.DB) ([]*models.Node, error) {
 			logger.Error("GetAllNodes: failed to scan node row: %v", err)
 			return nil, err
 		}
+		if n.PrivKey, err = openNodeKey(n.PrivKey); err != nil {
+			logger.Error("GetAllNodes: failed to open key for node %d: %v", n.ID, err)
+			n.PrivKey = ""
+		}
 		nodes = append(nodes, n)
 	}
 	return nodes, rows.Err()
@@ -66,15 +75,26 @@ func GetNodeByID(db *sql.DB, id int64) (*models.Node, error) {
 		logger.Error("GetNodeByID: failed to retrieve node %d: %v", id, err)
 		return nil, err
 	}
+
+	// an unopenable key still resolves the node, so it can be renamed or force removed
+	if n.PrivKey, err = openNodeKey(n.PrivKey); err != nil {
+		logger.Error("GetNodeByID: failed to open key for node %d: %v", id, err)
+		n.PrivKey = ""
+	}
 	return n, nil
 }
 
 // UpdateNode updates a child node link's mutable fields.
 func UpdateNode(db *sql.DB, n *models.Node) error {
-	_, err := db.Exec(`
+	priv, err := sealNodeKey(n.PrivKey)
+	if err != nil {
+		logger.Error("UpdateNode: failed to seal key for node %d: %v", n.ID, err)
+		return err
+	}
+	_, err = db.Exec(`
 		UPDATE kppn_nodes SET name = ?, url = ?, priv_key = ?, status = ?, updated = ?
 		WHERE id = ?`,
-		n.Name, n.URL, n.PrivKey, n.Status, time.Now().UTC(), n.ID,
+		n.Name, n.URL, priv, n.Status, time.Now().UTC(), n.ID,
 	)
 	if err != nil {
 		logger.Error("UpdateNode: failed to update node %d: %v", n.ID, err)
@@ -116,6 +136,11 @@ func CountNodes(db *sql.DB) (int, error) {
 // is stored — the raw value travels to the child and back through the browser,
 // and possession of it is what proves the child applied the change.
 func CreateNodeOp(db *sql.DB, o *models.NodeOp, ack string) error {
+	newKey, err := sealNodeKey(o.NewKey)
+	if err != nil {
+		logger.Error("CreateNodeOp: failed to seal key for node %d: %v", o.NodeID, err)
+		return err
+	}
 	tx, err := db.Begin()
 	if err != nil {
 		logger.Error("CreateNodeOp: failed to begin transaction: %v", err)
@@ -131,7 +156,7 @@ func CreateNodeOp(db *sql.DB, o *models.NodeOp, ack string) error {
 	res, err := tx.Exec(`
 		INSERT INTO kppn_node_ops (node_id, op, ack_hash, new_url, new_key, expires_at)
 		VALUES (?, ?, ?, ?, ?, ?)`,
-		o.NodeID, o.Op, hashToken(ack), o.NewURL, o.NewKey, o.ExpiresAt.UTC(),
+		o.NodeID, o.Op, hashToken(ack), o.NewURL, newKey, o.ExpiresAt.UTC(),
 	)
 	if err != nil {
 		logger.Error("CreateNodeOp: failed to create op for node %d: %v", o.NodeID, err)
@@ -162,6 +187,11 @@ func ConsumeNodeOp(db *sql.DB, ack string) (*models.NodeOp, error) {
 	}
 	if err != nil {
 		logger.Error("ConsumeNodeOp: failed to retrieve op: %v", err)
+		return nil, err
+	}
+
+	if o.NewKey, err = openNodeKey(o.NewKey); err != nil {
+		logger.Error("ConsumeNodeOp: failed to open new key for op %d: %v", o.ID, err)
 		return nil, err
 	}
 

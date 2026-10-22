@@ -96,6 +96,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// encrypt any node link private keys still at rest in plaintext
+	if err := db.SealNodeKeys(database); err != nil {
+		logger.Error("failed to seal node keys: %v", err)
+	}
+
 	// seed the default admin user if it doesn't exist
 	if err := db.SeedDefaultAdmin(database); err != nil {
 		logger.Error("failed to seed default admin: %v", err)
