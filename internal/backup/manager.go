@@ -252,6 +252,11 @@ func (m *Manager) nginxReload(ctx context.Context, siteName string) error {
 
 // readEnvValue reads a KEY=VALUE .env file and returns the value for the given key
 func readEnvValue(path, key string) (string, error) {
+	// site paths are built from appPath and a validated site name — a traversal
+	// segment here means the name was never validated, so refuse the read
+	if strings.Contains(path, "..") {
+		return "", fmt.Errorf("readEnvValue: refusing path %q", path)
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err

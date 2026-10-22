@@ -395,6 +395,9 @@ func (m *Manager) rewriteWPConfig(wpCfgPath, siteDir string) error {
 // only after search-replace, since wp-cli bootstraps multisite against the
 // domain still stored in the site and blogs tables.
 func rewriteWPConfigDomain(wpCfgPath, toDomain string) error {
+	if strings.Contains(wpCfgPath, "..") {
+		return fmt.Errorf("rewriteWPConfigDomain: refusing path %q", wpCfgPath)
+	}
 	raw, err := os.ReadFile(wpCfgPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -413,6 +416,9 @@ func rewriteWPConfigDomain(wpCfgPath, toDomain string) error {
 // wpSourceDomain reads the host out of the imported siteurl option, used as the
 // search-replace source when the archive carried no manifest
 func (m *Manager) wpSourceDomain(ctx context.Context, site *models.Site, siteDir, wpCfgPath string) (string, error) {
+	if strings.Contains(wpCfgPath, "..") {
+		return "", fmt.Errorf("wpSourceDomain: refusing path %q", wpCfgPath)
+	}
 	prefix := "wp_"
 	if raw, err := os.ReadFile(wpCfgPath); err == nil {
 		if hit := wpPrefixRe.FindSubmatch(raw); hit != nil {

@@ -4,6 +4,8 @@ paths-ignore:
   # built bundles — every src finding is otherwise counted twice
   - "web/static/js/**"
   - "web/static/css/**"
+  # vendored third-party libraries (codemirror, uikit, chart.js, scalar) — not ours to patch
+  - "web/static/vendor/**"
   - "node_modules"
 
 query-filters:
