@@ -29,7 +29,7 @@ export const spinner = () =>
 export const errorState = (msg) =>
     `<div class="kp-empty">
         <div class="kp-empty-icon" uk-icon="icon: warning; ratio: 2.5"></div>
-        <div class="kp-empty-text">${msg}</div>
+        <div class="kp-empty-text">${escapeHtml(msg)}</div>
     </div>`;
 
 export const emptyState = (icon, text) =>

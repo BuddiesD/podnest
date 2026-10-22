@@ -166,7 +166,7 @@ async function loadStatsTraffic(siteId) {
         data = await api.get(`/sites/${siteId}/stats/traffic`);
     } catch (err) {
         document.getElementById('stats-ip-rows').innerHTML =
-            `<tr><td colspan="2" class="kp-muted uk-text-small">Failed to load: ${err.message}</td></tr>`;
+            `<tr><td colspan="2" class="kp-muted uk-text-small">Failed to load: ${escapeHtml(err.message)}</td></tr>`;
         return;
     }
 
@@ -350,7 +350,7 @@ async function loadStatsDisk(siteId) {
             </div>`;
     } catch (err) {
         wrap.innerHTML =
-            `<p class="kp-muted uk-text-small">Failed to load disk usage: ${err.message}</p>`;
+            `<p class="kp-muted uk-text-small">Failed to load disk usage: ${escapeHtml(err.message)}</p>`;
     }
 }
 
