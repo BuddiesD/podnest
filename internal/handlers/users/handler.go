@@ -104,6 +104,8 @@ func (h *Handler) apiGetUser(w http.ResponseWriter, r *http.Request) {
 		"totp_enabled": user.TOTPEnabled,
 		"notify_email": user.NotifyEmail,
 		"notify_sms":   user.NotifySMS,
+		"node_uid":     user.NodeUID,
+		"blocked":      user.Blocked,
 		"created":      user.Created.Format("2006-01-02 15:04:05"),
 	})
 }
