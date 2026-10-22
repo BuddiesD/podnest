@@ -17,6 +17,7 @@ const copy = (src, dst) => {
 // uikit
 copy('uikit/dist/css/uikit.min.css', 'uikit/uikit.min.css');
 copy('uikit/dist/js/uikit.min.js', 'uikit/uikit.min.js');
+copy('uikit/dist/js/uikit-icons.min.js', 'uikit/uikit-icons.min.js');
 
 // scalar api reference — the self-contained browser build
 copy('@scalar/api-reference/dist/browser/standalone.js', 'scalar/standalone.js');
