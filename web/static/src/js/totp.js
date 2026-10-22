@@ -4,6 +4,7 @@
 
 "use strict";
 
+import QRCode from 'qrcode';
 import { router } from './router.js';
 
 // renderQR generates a QR code via QRCode.toDataURL and shows it as an <img>.

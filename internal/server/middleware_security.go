@@ -34,11 +34,11 @@ func cspNonce(r *http.Request) string {
 func buildCSP(nonce string) string {
 	return "" +
 		"default-src 'none'; " +
-		"script-src 'self' https://cdn.jsdelivr.net 'nonce-" + nonce + "'; " +
-		"style-src 'self' https://cdn.jsdelivr.net https://fonts.googleapis.com 'unsafe-inline'; " +
-		"font-src 'self' https://fonts.gstatic.com; " +
+		"script-src 'self' 'nonce-" + nonce + "'; " +
+		"style-src 'self' 'unsafe-inline'; " +
+		"font-src 'self'; " +
 		"img-src 'self' data: blob:; " +
-		"connect-src 'self' ws: wss: https://cdn.jsdelivr.net; " +
+		"connect-src 'self' ws: wss:; " +
 		"manifest-src 'self'; " +
 		"frame-src 'none'; " +
 		"frame-ancestors 'self'; " +

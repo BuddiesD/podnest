@@ -296,8 +296,8 @@ function loadCss(href) {
     document.head.appendChild(l);
 }
 
-// loadScript injects a script and resolves when it has loaded; jsdelivr is a
-// CSP-whitelisted host so no nonce is required for these external sources
+// loadScript injects a script and resolves when it has loaded; the vendored
+// sources are same-origin, so script-src 'self' covers them without a nonce
 function loadScript(src) {
     return new Promise((resolve, reject) => {
         const existing = document.querySelector(`script[src="${src}"]`);
@@ -316,10 +316,10 @@ function loadScript(src) {
 }
 
 // ensureCodeMirror lazy-loads CodeMirror 5 plus mode autoloading, exactly once.
-// Modes are fetched on demand from jsdelivr via the loadmode addon.
+// Modes are fetched on demand from the vendored copy via the loadmode addon.
 function ensureCodeMirror() {
     if (_cmReady) return _cmReady;
-    const base = "https://cdn.jsdelivr.net/npm/codemirror@5";
+    const base = "/static/vendor/codemirror";
     loadCss(`${base}/lib/codemirror.css`);
     loadCss(`${base}/theme/material-darker.css`);
 
@@ -329,7 +329,7 @@ function ensureCodeMirror() {
             loadScript(`${base}/addon/mode/loadmode.js`),
         ]))
         .then(() => {
-            // point the autoloader at jsdelivr so detected modes resolve there
+            // point the autoloader at the vendored modes
             window.CodeMirror.modeURL = `${base}/mode/%N/%N.js`;
         });
     return _cmReady;
