@@ -10,6 +10,8 @@ import (
 	"encoding/base64"
 	"net/http"
 	"strings"
+
+	"podnest/internal/auth"
 )
 
 // cspNonceKey is the context key under which the per-request CSP script nonce
@@ -82,8 +84,9 @@ func securityHeaders(next http.Handler) http.Handler {
 		// limit referrer information sent to external sites
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 
-		// only set HSTS when the connection is secure — avoids breaking plain HTTP dev environments
-		if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		// only set HSTS when the connection is secure — avoids breaking plain HTTP dev
+		// environments; X-Forwarded-Proto counts only from a trusted hop
+		if auth.IsSecure(r) {
 			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
 
