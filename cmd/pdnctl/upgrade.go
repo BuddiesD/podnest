@@ -9,6 +9,7 @@ package main
 // containers and unused images.
 import (
 	"fmt"
+	"os/user"
 	"strings"
 	"time"
 
@@ -32,6 +33,23 @@ func init() {
 // runUpgrade chains update, pull-images, the site recreate, and the prune —
 // any failure stops the run before the prune so nothing still needed is removed
 func runUpgrade() error {
+	s, err := loadState()
+	if err != nil {
+		return err
+	}
+
+	// installs that predate the secret env file get one before the restart below
+	u, err := user.Lookup(s.User)
+	if err != nil {
+		return err
+	}
+	if err := ensurePNEnv(s.User, u.HomeDir); err != nil {
+		return fmt.Errorf("could not create %s: %w", pnEnvName, err)
+	}
+	if err := ensureUnitEnvFile(s.UnitPath); err != nil {
+		return err
+	}
+
 	if err := runUpdate(); err != nil {
 		return err
 	}
@@ -39,7 +57,7 @@ func runUpgrade() error {
 		return err
 	}
 
-	s, err := loadState()
+	s, err = loadState()
 	if err != nil {
 		return err
 	}

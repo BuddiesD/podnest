@@ -8,6 +8,8 @@ package main
 // dedicated user: account + subuid/subgid ranges, unprivileged-port sysctl,
 // linger, podman socket override, the systemd user unit, and the state file.
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -21,6 +23,10 @@ import (
 
 // the UI port baked into the unit
 const installPort = 9000
+
+// pnEnvName is the env file kept in the PodNest user's home, outside the app
+// dir, holding PN_SECRET_KEY
+const pnEnvName = ".pn.env"
 
 // flags for the install subcommand
 var (
@@ -203,7 +209,10 @@ func runInstall() error {
 	}
 	fmt.Println("OK:", sock)
 
-	// 4. podnest user service unit
+	// 4. secret env file + podnest user service unit
+	if err := ensurePNEnv(installUser, home); err != nil {
+		return fmt.Errorf("could not create %s: %w", pnEnvName, err)
+	}
 	unitPath := home + "/.config/systemd/user/podnest.service"
 	if err := os.WriteFile(unitPath, []byte(buildUnit(installVersion, tz)), 0o644); err != nil {
 		return err
@@ -267,6 +276,7 @@ ExecStart=/usr/bin/podman run \
     -v %%t/podman/podman.sock:/run/podman/podman.sock:rw \
     -v %%h/sites:/opt/podnest:z \
     --tmpfs /tmp \
+    --env-file %%h/.pn.env \
     -e TZ=%s \
     -e LOG_LEVEL=INFO \
     ghcr.io/kpirnie/podnest:%s serve --app-path /opt/podnest --port %d --socket /run/podman/podman.sock
@@ -275,6 +285,57 @@ ExecStop=/usr/bin/podman stop podnest
 [Install]
 WantedBy=default.target
 `, tz, ver, installPort)
+}
+
+// ensurePNEnv writes ~/.pn.env with a fresh PN_SECRET_KEY when it does not
+// exist. An existing file is never touched — replacing the key would leave
+// every sealed node key undecryptable.
+func ensurePNEnv(uname, home string) error {
+	path := home + "/" + pnEnvName
+	if _, err := os.Lstat(path); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(f, "PN_SECRET_KEY=%s\n", hex.EncodeToString(b)); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := run("chown", uname+":"+uname, path); err != nil {
+		return err
+	}
+	fmt.Println("OK:", path)
+	return nil
+}
+
+// ensureUnitEnvFile adds the --env-file flag to an installed unit that predates it.
+func ensureUnitEnvFile(unitPath string) error {
+	unit, err := os.ReadFile(unitPath)
+	if err != nil {
+		return fmt.Errorf("unit file missing at %s: %w", unitPath, err)
+	}
+	if strings.Contains(string(unit), "--env-file") {
+		return nil
+	}
+
+	const anchor = "    -e TZ="
+	if !strings.Contains(string(unit), anchor) {
+		return fmt.Errorf("unit %s: could not find where to add --env-file", unitPath)
+	}
+	patched := strings.Replace(string(unit), anchor, "    --env-file %h/.pn.env \\\n"+anchor, 1)
+	return os.WriteFile(unitPath, []byte(patched), 0o644)
 }
 
 // fileHasPrefix reports whether any line in the file starts with the prefix
