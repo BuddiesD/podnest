@@ -117,7 +117,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     min-width: 44px;
     padding: 6px 4px;
     border-radius: 6px;
-    background: var(--kp-card-bg);
+    background: var(--kp-bg-card);
     border: 1px solid var(--kp-border);
     transition: background 0.15s ease, border-color 0.15s ease;
 }
@@ -132,8 +132,8 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 }
 
 .kp-health-badge:hover {
-    background: var(--kp-hover);
-    border-color: var(--kp-border-active);
+    background: var(--kp-bg-hover);
+    border-color: var(--kp-border-bright);
 }
 
 .kp-health-badges:empty {
