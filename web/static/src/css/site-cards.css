@@ -209,3 +209,36 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     min-width: 14px;
     min-height: 14px;
 }
+
+
+.kp-list-card-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: rgba(43,142,255,0.15);
+    color: var(--kp-cyan);
+    border: 1px solid rgba(43,142,255,0.3);
+    font-family: var(--kp-font-mono);
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+.kp-list-card-title {
+    font-weight: 600;
+    color: var(--kp-white);
+    font-family: var(--kp-font-display);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+.kp-list-card-value-wrap {
+    white-space: normal;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px;
+}

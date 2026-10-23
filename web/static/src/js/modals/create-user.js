@@ -9,7 +9,7 @@ import { normalizeUser } from '../helpers.js';
 import { router } from '../router.js';
 import { toast } from '../toast.js';
 import { renderQR, showBackupCodes } from '../totp.js';
-import { userRow } from '../views/users.js';
+import { userCard } from '../views/users.js';
 
 export function showCreateUserModal(root) {
     const html = `
@@ -116,8 +116,8 @@ export function showCreateUserModal(root) {
         };
         try {
             const u = normalizeUser(await api.post("/users", body));
-            document.getElementById("users-table-body")
-                .insertAdjacentHTML("beforeend", userRow(u));
+            document.getElementById("users-grid")
+                .insertAdjacentHTML("beforeend", userCard(u));
             toast.success(`User '${u.uname}' created`);
 
             // hide the form, show TOTP setup section
