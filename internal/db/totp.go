@@ -88,7 +88,8 @@ func StoreBackupCodes(database *sql.DB, uid int64, codes []string) error {
 }
 
 // UseBackupCode checks unused backup codes for the user, marks the matching one
-// as used, and returns true. Returns false if no code matches.
+// as used, and returns true. Returns false if no code matches or it was already
+// consumed by a concurrent caller.
 func UseBackupCode(database *sql.DB, uid int64, code string) (bool, error) {
 	rows, err := database.Query(`SELECT id, code_hash FROM kppn_totp_backup_codes WHERE uid=? AND used=0`, uid)
 	if err != nil {
@@ -105,8 +106,15 @@ func UseBackupCode(database *sql.DB, uid int64, code string) (bool, error) {
 		}
 		if bcrypt.CompareHashAndPassword([]byte(hash), []byte(upper)) == nil {
 			rows.Close()
-			_, err := database.Exec(`UPDATE kppn_totp_backup_codes SET used=1 WHERE id=?`, id)
-			return err == nil, err
+			res, err := database.Exec(`UPDATE kppn_totp_backup_codes SET used=1 WHERE id=? AND used=0`, id)
+			if err != nil {
+				return false, err
+			}
+			n, err := res.RowsAffected()
+			if err != nil {
+				return false, err
+			}
+			return n == 1, nil
 		}
 	}
 	if err := rows.Err(); err != nil {
