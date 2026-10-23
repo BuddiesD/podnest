@@ -321,8 +321,13 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// TOTP verified — consume the pending token and create a full session
-		_ = db.DeleteTOTPPending(s.cfg.DB, pendingToken)
+		consumed, _ := db.DeleteTOTPPending(s.cfg.DB, pendingToken)
 		auth.ClearTOTPPendingCookie(w, r)
+		if !consumed {
+			logger.Warn("TOTP pending token already consumed for user %d", user.ID)
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
 		auth.RecordSuccessfulLogin(ip)
 
 		// lazily encrypt a plaintext secret now that the password-derived key is in hand

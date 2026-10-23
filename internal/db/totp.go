@@ -44,13 +44,21 @@ func GetTOTPPending(db *sql.DB, token string) (*models.TOTPPending, error) {
 	return p, nil
 }
 
-// DeleteTOTPPending removes a pending token after use.
-func DeleteTOTPPending(db *sql.DB, token string) error {
-	_, err := db.Exec(`DELETE FROM kppn_totp_pending WHERE token=?`, hashToken(token))
+// DeleteTOTPPending removes a pending token after use. It returns true only
+// when this call removed the row, so concurrent requests sharing one pending
+// token can't each complete the login.
+func DeleteTOTPPending(db *sql.DB, token string) (bool, error) {
+	res, err := db.Exec(`DELETE FROM kppn_totp_pending WHERE token=?`, hashToken(token))
 	if err != nil {
 		logger.Error("DeleteTOTPPending: %v", err)
+		return false, err
 	}
-	return err
+	n, err := res.RowsAffected()
+	if err != nil {
+		logger.Error("DeleteTOTPPending: %v", err)
+		return false, err
+	}
+	return n == 1, nil
 }
 
 // DeleteExpiredTOTPPendings purges stale pending records.
