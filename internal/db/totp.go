@@ -105,8 +105,19 @@ func UseBackupCode(database *sql.DB, uid int64, code string) (bool, error) {
 		}
 		if bcrypt.CompareHashAndPassword([]byte(hash), []byte(upper)) == nil {
 			rows.Close()
-			_, err := database.Exec(`UPDATE kppn_totp_backup_codes SET used=1 WHERE id=?`, id)
-			return err == nil, err
+			// guard on used=0 so concurrent requests with the same code can't
+			// both consume it; only the caller whose UPDATE lands wins
+			res, err := database.Exec(`UPDATE kppn_totp_backup_codes SET used=1 WHERE id=? AND used=0`, id)
+			if err != nil {
+				logger.Error("UseBackupCode: uid %d: %v", uid, err)
+				return false, err
+			}
+			n, err := res.RowsAffected()
+			if err != nil {
+				logger.Error("UseBackupCode: uid %d: %v", uid, err)
+				return false, err
+			}
+			return n == 1, nil
 		}
 	}
 	if err := rows.Err(); err != nil {
