@@ -67,6 +67,16 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     width: 220px;
     flex-shrink: 0;
 }
+.kp-bulk-tools {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.kp-sites-sort {
+    width: 140px;
+    flex-shrink: 0;
+}
 
 /* -- sortable column headers ----------------------------------------------- */
 .kp-sortable {

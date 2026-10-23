@@ -68,6 +68,12 @@ export const versionLabel = (site) => {
     }
 };
 
+export const cardRow = (label, value, cls = "") =>
+    `<div class="kp-list-card-row">
+        <span class="kp-list-card-label">${label}</span>
+        <span class="kp-list-card-value ${cls}">${value}</span>
+    </div>`;
+
 export const normalizeUser = (u) => ({
     id: u.id ?? u.ID,
     uname: u.uname ?? u.UName,

@@ -5,7 +5,7 @@
 "use strict";
 
 import { api } from '../api.js';
-import { emptyState, siteTypeLabel, statusBadge, versionLabel } from '../helpers.js';
+import { cardRow, emptyState, siteTypeLabel, statusBadge, versionLabel } from '../helpers.js';
 import { showCreateSiteModal } from '../modals/create-site.js';
 
 export async function viewSites(root) {
@@ -22,6 +22,7 @@ export async function viewSites(root) {
         <!-- bulk action bar — always visible -->
         <div id="sites-bulk-bar" class="kp-bulk-bar">
             <div class="kp-bulk-actions">
+                <input class="uk-checkbox" type="checkbox" id="sites-select-all" uk-tooltip="Select All">
                 <span id="sites-bulk-count" class="kp-bulk-count">0 selected</span>
                 <!-- desktop: individual buttons (hidden on mobile) -->
                 <button class="uk-button kp-btn-secondary kp-btn-sm uk-visible@s" id="bulk-start" uk-tooltip="Start the Pod(s)" disabled>
@@ -55,34 +56,22 @@ export async function viewSites(root) {
                     </div>
                 </li>
             </div>
-            <input class="uk-input kp-input kp-input-sm kp-sites-search"
-                   id="sites-search" type="text" placeholder="Filter sites…" autocomplete="off">
+            <div class="kp-bulk-tools">
+                <select class="uk-select kp-select kp-input-sm kp-sites-sort" id="sites-sort" uk-tooltip="Sort">
+                    <option value="name" selected>Name</option>
+                    <option value="status">Status</option>
+                    <option value="type">Type</option>
+                    <option value="domain">Domain</option>
+                </select>
+                <input class="uk-input kp-input kp-input-sm kp-sites-search"
+                       id="sites-search" type="text" placeholder="Filter sites…" autocomplete="off">
+            </div>
         </div>
 
         ${sites.length === 0
             ? emptyState("world", "No sites yet — create one to get started")
-            : `<div class="kp-table-wrap">
-                <div class="uk-overflow-auto">
-                    <table class="uk-table uk-table-hover uk-table-divider uk-table-small uk-margin-remove">
-                        <thead>
-                            <tr>
-                                <th class="uk-table-shrink">
-                                    <input class="uk-checkbox" type="checkbox" id="sites-select-all" uk-tooltip="Select All">
-                                </th>
-                                <th class="kp-sortable" data-col="status">Status <span class="kp-sort-icon" data-col="status"></span></th>
-                                <th class="kp-sortable" data-col="name">Name <span class="kp-sort-icon" data-col="name"></span></th>
-                                <th class="uk-visible@s kp-sortable" data-col="type">Type <span class="kp-sort-icon" data-col="type"></span></th>
-                                <th class="uk-visible@m">Port</th>
-                                <th class="uk-visible@m">UID</th>
-                                <th class="uk-visible@m kp-sortable" data-col="domain">Domain <span class="kp-sort-icon" data-col="domain"></span></th>
-                                <th class="uk-table-shrink">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${sites.map(s => siteRow(s, sites)).join("")}
-                        </tbody>
-                    </table>
-                </div>
+            : `<div class="kp-list-grid" id="sites-grid">
+                ${sites.map(s => siteListCard(s, sites)).join("")}
             </div>`
         }`;
 
@@ -93,7 +82,7 @@ export async function viewSites(root) {
     wireBulkSelection();
 }
 
-function siteRow(site, allSites = []) {
+function siteListCard(site, allSites = []) {
     const primaryDomain = site.Domains?.[0] ?? null;
     const isRP          = site.SiteType === 6;
     // resolve parent only when this site is a clone
@@ -102,92 +91,79 @@ function siteRow(site, allSites = []) {
         : null;
 
     return `
-        <tr data-site-id="${site.ID}" data-status="${!isRP ? site.SiteStatus : ""}" data-type="${site.SiteType}">
-            <!-- row checkbox -->
-            <td class="uk-table-shrink">
+        <div class="kp-list-card" data-site-id="${site.ID}" data-status="${!isRP ? site.SiteStatus : ""}"
+             data-type="${site.SiteType}" data-domain="${primaryDomain ?? ""}">
+            <!-- row checkbox + name -->
+            <div class="kp-list-card-header">
                 <input class="uk-checkbox kp-site-row-check" type="checkbox"
                        data-site-id="${site.ID}" data-site-type="${site.SiteType}">
-            </td>
-            <!-- status badge -->
-            <td class="uk-table-shrink kp-site-row-status">${!isRP ? statusBadge(site.SiteStatus) : ""}</td>
-
-            <!-- name + optional parent clone link -->
-            <td>
                 <a class="kp-site-row-name" href="javascript:void(0)"
                    data-action="manage" data-id="${site.ID}">${site.Name}</a>
-                ${parent
-                    ? `<div class="kp-muted uk-text-small kp-mono">
-                           <span uk-icon="icon: git-fork; ratio: 0.7"></span>
-                           <a href="javascript:void(0)" data-action="manage" data-id="${parent.ID}"
-                              style="color:var(--kp-cyan)">${parent.Name}</a>
-                       </div>`
-                    : ""}
-            </td>
+            </div>
 
-            <!-- type / runtime version -->
-            <td class="uk-visible@s kp-muted kp-mono uk-text-small">
-                ${siteTypeLabel(site.SiteType)}${versionLabel(site) ? " / " + versionLabel(site) : ""}
-            </td>
-
-            <!-- internal port -->
-            <td class="uk-visible@m kp-muted kp-mono uk-text-small">:${site.Port}</td>
-
-            <!-- host-mapped owner UID of html/ -->
-            <td class="uk-visible@m kp-muted kp-mono uk-text-small">${site.HostUID ?? (isRP ? "" : "—")}</td>
-
-            <!-- primary domain -->
-            <td class="uk-visible@m uk-text-small">
-                ${primaryDomain
+            <!-- details -->
+            <div class="kp-list-card-body">
+                ${!isRP ? cardRow("Status", statusBadge(site.SiteStatus)) : ""}
+                ${cardRow("Type", `${siteTypeLabel(site.SiteType)}${versionLabel(site) ? " / " + versionLabel(site) : ""}`, "kp-muted kp-mono")}
+                ${cardRow("Port", `:${site.Port}`, "kp-muted kp-mono")}
+                ${cardRow("UID", site.HostUID ?? "—", "kp-muted kp-mono")}
+                ${cardRow("Domain", primaryDomain
                     ? `<a href="http://${primaryDomain}" target="_blank"
                           style="color:var(--kp-cyan)">${primaryDomain}</a>`
-                    : `<span class="kp-muted">—</span>`}
-            </td>
+                    : `<span class="kp-muted">—</span>`)}
+                ${parent
+                    ? cardRow("Clone of", `<span uk-icon="icon: git-fork; ratio: 0.7"></span>
+                          <a href="javascript:void(0)" data-action="manage" data-id="${parent.ID}"
+                             style="color:var(--kp-cyan)">${parent.Name}</a>`, "kp-mono")
+                    : ""}
+            </div>
 
             <!-- action buttons -->
-            <td class="uk-table-shrink">
-                <div class="kp-site-row-actions">
-                    <button class="uk-button kp-btn-secondary kp-btn-sm"
-                            data-action="manage" data-id="${site.ID}"
-                            uk-tooltip="Manage">
-                        <span uk-icon="icon: cog;"></span>
-                    </button>
-                    ${!isRP ? `
-                    ${site.SiteStatus === 1
-                        ? `<button class="uk-button kp-btn-secondary kp-btn-sm"
-                                   data-action="stop" data-id="${site.ID}"
-                                   uk-tooltip="Stop">
-                               <span uk-icon="icon: ban;"></span>
-                           </button>`
-                        : `<button class="uk-button kp-btn-secondary kp-btn-sm"
-                                   data-action="start" data-id="${site.ID}"
-                                   uk-tooltip="Start">
-                               <span uk-icon="icon: play;"></span>
-                           </button>`
-                    }
-                    <button class="uk-button kp-btn-secondary kp-btn-sm"
-                            data-action="restart" data-id="${site.ID}"
-                            uk-tooltip="Restart">
-                        <span uk-icon="icon: refresh;"></span>
-                    </button>
-                    <button class="uk-button kp-btn-secondary kp-btn-sm"
-                            data-action="flush" data-id="${site.ID}"
-                            uk-tooltip="Flush Caches">
-                        <span uk-icon="icon: bolt;"></span>
-                    </button>
-                    <button class="uk-button kp-btn-ghost kp-btn-sm kp-btn-recreate"
-                            data-action="recreate" data-id="${site.ID}"
-                            uk-tooltip="Recreate Pod">
-                        <span uk-icon="icon: history;"></span>
-                    </button>
-                    ` : ""}
-                    <button class="uk-button kp-btn-ghost kp-btn-sm kp-btn-recreate"
-                            data-action="delete" data-id="${site.ID}"
-                            uk-tooltip="Delete">
-                        <span uk-icon="icon: trash;"></span>
-                    </button>
-                </div>
-            </td>
-        </tr>`;
+            <div class="kp-list-card-actions">
+                <button class="uk-button kp-btn-secondary kp-btn-sm"
+                        data-action="manage" data-id="${site.ID}"
+                        uk-tooltip="Manage">
+                    <span uk-icon="icon: cog;"></span>
+                </button>
+                ${!isRP ? `
+                ${site.SiteStatus === 1
+                    ? `<button class="uk-button kp-btn-secondary kp-btn-sm"
+                               data-action="stop" data-id="${site.ID}"
+                               uk-tooltip="Stop">
+                           <span uk-icon="icon: ban;"></span>
+                       </button>`
+                    : `<button class="uk-button kp-btn-secondary kp-btn-sm"
+                               data-action="start" data-id="${site.ID}"
+                               uk-tooltip="Start">
+                           <span uk-icon="icon: play;"></span>
+                       </button>`
+                }
+                <button class="uk-button kp-btn-secondary kp-btn-sm"
+                        data-action="restart" data-id="${site.ID}"
+                        uk-tooltip="Restart">
+                    <span uk-icon="icon: refresh;"></span>
+                </button>
+                <button class="uk-button kp-btn-secondary kp-btn-sm"
+                        data-action="flush" data-id="${site.ID}"
+                        uk-tooltip="Flush Caches">
+                    <span uk-icon="icon: bolt;"></span>
+                </button>
+                ` : ""}
+                <span class="kp-list-card-spacer"></span>
+                ${!isRP ? `
+                <button class="uk-button kp-btn-ghost kp-btn-sm kp-btn-recreate"
+                        data-action="recreate" data-id="${site.ID}"
+                        uk-tooltip="Recreate Pod">
+                    <span uk-icon="icon: history;"></span>
+                </button>
+                ` : ""}
+                <button class="uk-button kp-btn-ghost kp-btn-sm kp-btn-recreate"
+                        data-action="delete" data-id="${site.ID}"
+                        uk-tooltip="Delete">
+                    <span uk-icon="icon: trash;"></span>
+                </button>
+            </div>
+        </div>`;
 }
 
 export function siteCard(site, allSites = []) {
@@ -233,11 +209,9 @@ function wireBulkSelection() {
     const countEl = document.getElementById("sites-bulk-count");
     const selAll  = document.getElementById("sites-select-all");
     const search  = document.getElementById("sites-search");
-    const tbody   = document.querySelector(".kp-table-wrap tbody");
-    if (!bar || !selAll) return;
-
-    // -- sort state
-    let sortCol = null, sortAsc = true;
+    const sortSel = document.getElementById("sites-sort");
+    const grid    = document.getElementById("sites-grid");
+    if (!bar || !selAll || !grid) return;
 
     const getChecked = () =>
         [...document.querySelectorAll(".kp-site-row-check:checked")];
@@ -262,47 +236,29 @@ function wireBulkSelection() {
         selAll.checked = all.length > 0 && n === all.length;
     };
 
+    // -- sort/filter value for a card
+    const cardVal = (card, key) => key === "name"
+        ? (card.querySelector(".kp-site-row-name")?.textContent.trim().toLowerCase() ?? "")
+        : (card.dataset[key] ?? "").toLowerCase();
+
     // -- filtering
     const applyFilter = () => {
         const q = search.value.trim().toLowerCase();
-        document.querySelectorAll(".kp-table-wrap tbody tr").forEach(row => {
-            const name   = row.querySelector(".kp-site-row-name")?.textContent.toLowerCase() ?? "";
-            const domain = row.querySelector("td:nth-child(6)")?.textContent.toLowerCase() ?? "";
-            row.style.display = (!q || name.includes(q) || domain.includes(q)) ? "" : "none";
+        grid.querySelectorAll(".kp-list-card").forEach(card => {
+            const name   = cardVal(card, "name");
+            const domain = cardVal(card, "domain");
+            card.style.display = (!q || name.includes(q) || domain.includes(q)) ? "" : "none";
         });
     };
 
-    // -- sorting
-    const applySort = (col) => {
-        if (sortCol === col) {
-            sortAsc = !sortAsc;
-        } else {
-            sortCol = col; sortAsc = true;
-        }
-
-        document.querySelectorAll(".kp-sort-icon").forEach(el => {
-            el.textContent = el.dataset.col === col ? (sortAsc ? " ↑" : " ↓") : " ↕";
-        });
-
-        const rows = [...tbody.querySelectorAll("tr")];
-        rows.sort((a, b) => {
-            let av = "", bv = "";
-            if (col === "name") {
-                av = a.querySelector(".kp-site-row-name")?.textContent ?? "";
-                bv = b.querySelector(".kp-site-row-name")?.textContent ?? "";
-            } else if (col === "status") {
-                av = a.dataset.status ?? "";
-                bv = b.dataset.status ?? "";
-            } else if (col === "type") {
-                av = a.dataset.type ?? "";
-                bv = b.dataset.type ?? "";
-            } else if (col === "domain") {
-                av = a.querySelector("td:nth-child(6)")?.textContent.trim() ?? "";
-                bv = b.querySelector("td:nth-child(6)")?.textContent.trim() ?? "";
-            }
-            return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
-        });
-        rows.forEach(r => tbody.appendChild(r));
+    // -- sorting, ties fall back to name
+    const applySort = () => {
+        const key   = sortSel?.value ?? "name";
+        const cards = [...grid.querySelectorAll(".kp-list-card")];
+        cards.sort((a, b) =>
+            cardVal(a, key).localeCompare(cardVal(b, key), undefined, { numeric: true })
+            || cardVal(a, "name").localeCompare(cardVal(b, "name")));
+        cards.forEach(c => grid.appendChild(c));
     };
 
     // -- events
@@ -313,15 +269,12 @@ function wireBulkSelection() {
         updateBulk();
     });
 
-    tbody?.addEventListener("change", (e) => {
+    grid.addEventListener("change", (e) => {
         if (e.target.classList.contains("kp-site-row-check")) updateBulk();
     });
 
     search?.addEventListener("input", applyFilter);
-
-    document.querySelectorAll(".kp-sortable").forEach(th => {
-        th.addEventListener("click", () => applySort(th.dataset.col));
-    });
+    sortSel?.addEventListener("change", applySort);
 
     // desktop button clicks
     ["bulk-start","bulk-stop","bulk-restart","bulk-flush","bulk-recreate"].forEach(action => {
@@ -357,6 +310,6 @@ function wireBulkSelection() {
         });
     });
 
-    document.querySelectorAll(".kp-sort-icon").forEach(el => { el.textContent = " ↕"; });
+    applySort();
     updateBulk();
 }
