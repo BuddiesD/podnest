@@ -104,7 +104,7 @@ function siteListCard(site, allSites = []) {
             <!-- details -->
             <div class="kp-list-card-body">
                 ${!isRP ? cardRow("Status", statusBadge(site.SiteStatus)) : ""}
-                ${cardRow("Type", `${siteTypeLabel(site.SiteType)}${versionLabel(site) ? " / " + versionLabel(site) : ""}`, "kp-muted kp-mono")}
+                ${cardRow("Type", `${siteTypeLabel(site.SiteType)}${!isRP && versionLabel(site) ? " / " + versionLabel(site) : ""}`, "kp-muted kp-mono")}
                 ${cardRow("Port", `:${site.Port}`, "kp-muted kp-mono")}
                 ${cardRow("UID", site.HostUID ?? "—", "kp-muted kp-mono")}
                 ${cardRow("Domain", primaryDomain
@@ -180,7 +180,7 @@ export function siteCard(site, allSites = []) {
                     <h2 class="kp-view-title" data-action="manage" data-id="${site.ID}">${site.Name}</h2>
                     <div class="kp-site-meta">
                         <span class="kp-site-meta-item"><span uk-icon="icon: server; ratio: 0.75"></span> :${site.Port}</span>
-                        <span class="kp-site-meta-item"><span uk-icon="icon: code; ratio: 0.75"></span> ${siteTypeLabel(site.SiteType)}${versionLabel(site) ? " / " + versionLabel(site) : ""}</span>
+                        <span class="kp-site-meta-item"><span uk-icon="icon: code; ratio: 0.75"></span> ${siteTypeLabel(site.SiteType)}${!isRP && versionLabel(site) ? " / " + versionLabel(site) : ""}</span>
                         ${primaryDomain ? `<span class="kp-site-meta-item" style="width:100%"><a href="http://${primaryDomain}" target="_blank" style="color:var(--kp-cyan)">${primaryDomain}</a></span>` : ""}
                     </div>
                     ${parent ? `<div class="kp-site-meta kp-muted uk-text-small uk-margin-small-top"><span uk-icon="icon: git-fork; ratio: 0.75"></span> <a href="javascript:void(0)" data-action="manage" data-id="${parent.ID}" style="color:var(--kp-cyan)">${parent.Name}</a></div>` : ""}

@@ -650,7 +650,7 @@ Minimum version required to store current data is: `+o+`.
             <!-- details -->
             <div class="kp-list-card-body">
                 ${a?"":R("Status",J(e.SiteStatus))}
-                ${R("Type",`${ve(e.SiteType)}${X(e)?" / "+X(e):""}`,"kp-muted kp-mono")}
+                ${R("Type",`${ve(e.SiteType)}${!a&&X(e)?" / "+X(e):""}`,"kp-muted kp-mono")}
                 ${R("Port",`:${e.Port}`,"kp-muted kp-mono")}
                 ${R("UID",e.HostUID??"\u2014","kp-muted kp-mono")}
                 ${R("Domain",s?`<a href="http://${s}" target="_blank"
@@ -709,7 +709,7 @@ Minimum version required to store current data is: `+o+`.
                     <h2 class="kp-view-title" data-action="manage" data-id="${e.ID}">${e.Name}</h2>
                     <div class="kp-site-meta">
                         <span class="kp-site-meta-item"><span uk-icon="icon: server; ratio: 0.75"></span> :${e.Port}</span>
-                        <span class="kp-site-meta-item"><span uk-icon="icon: code; ratio: 0.75"></span> ${ve(e.SiteType)}${X(e)?" / "+X(e):""}</span>
+                        <span class="kp-site-meta-item"><span uk-icon="icon: code; ratio: 0.75"></span> ${ve(e.SiteType)}${!a&&X(e)?" / "+X(e):""}</span>
                         ${s?`<span class="kp-site-meta-item" style="width:100%"><a href="http://${s}" target="_blank" style="color:var(--kp-cyan)">${s}</a></span>`:""}
                     </div>
                     ${n?`<div class="kp-site-meta kp-muted uk-text-small uk-margin-small-top"><span uk-icon="icon: git-fork; ratio: 0.75"></span> <a href="javascript:void(0)" data-action="manage" data-id="${n.ID}" style="color:var(--kp-cyan)">${n.Name}</a></div>`:""}
