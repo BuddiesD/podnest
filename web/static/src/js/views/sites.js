@@ -154,7 +154,7 @@ function siteListCard(site, allSites = []) {
                 <button class="uk-button kp-btn-ghost kp-btn-sm kp-btn-recreate"
                         data-action="recreate" data-id="${site.ID}"
                         uk-tooltip="Recreate Pod">
-                    <span uk-icon="icon: history;"></span>
+                    <span uk-icon="icon: cloud-download;"></span>
                 </button>
                 ` : ""}
                 <button class="uk-button kp-btn-ghost kp-btn-sm kp-btn-recreate"
@@ -197,7 +197,7 @@ export function siteCard(site, allSites = []) {
                 <button class="uk-button kp-btn-secondary kp-btn-sm" data-action="restart" data-id="${site.ID}" uk-tooltip="Restart the Site"><span uk-icon="icon: refresh;"></span></button>
                 <button class="uk-button kp-btn-secondary kp-btn-sm" data-action="flush" data-id="${site.ID}" title="Flush cache" uk-tooltip="Flush the Caches"><span uk-icon="icon: bolt;"></span></button>
                 <div class="kp-site-actions-break"></div>
-                <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="recreate" data-id="${site.ID}" title="Recreate pod" uk-tooltip="Recreate the Pod"><span uk-icon="icon: history;"></span></button>
+                <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="recreate" data-id="${site.ID}" title="Recreate pod" uk-tooltip="Recreate the Pod"><span uk-icon="icon: cloud-download;"></span></button>
                 ` : ""}
                 <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="delete" data-id="${site.ID}" title="Delete" uk-tooltip="Delete the Site"><span uk-icon="icon: trash;"></span></button>
             </div>
