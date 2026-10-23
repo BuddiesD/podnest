@@ -413,6 +413,14 @@ Day-to-day usage, configuration, and the full API reference are documented in th
 
 ---
 
+## Acknowledgements, Contributions, & Accolades
+
+Thanks to everyone who has helped make PodNest more secure, reliable, & all around a better project.
+
+- **[@BuddiesD](https://github.com/BuddiesD)** — reported a race condition that allowed a TOTP backup code to be consumed more than once under concurrent requests ([#8](https://github.com/kpirnie/podnest/issues/8))
+
+---
+
 ## License
 
 PodNest is licensed under the [MIT License](LICENSE). See the `LICENSE` file in the repository for the full license text.
