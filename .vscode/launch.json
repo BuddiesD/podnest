@@ -1,0 +1,47 @@
+{
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"name": "Debug PodNest (serve)",
+			"type": "go",
+			"request": "launch",
+			"mode": "debug",
+			"program": "${workspaceFolder}/main.go",
+			"args": [
+				"serve",
+				"--app-path", "/opt/podnest",
+				"--port", "8080",
+				"--socket", "/run/podman/podman.sock"
+			],
+			"env": {
+				"LOG_LEVEL": "DEBUG"
+			},
+			"cwd": "${workspaceFolder}"
+		},
+		{
+			"name": "Debug PodNest (serve, custom app path)",
+			"type": "go",
+			"request": "launch",
+			"mode": "debug",
+			"program": "${workspaceFolder}/main.go",
+			"args": [
+				"serve",
+				"--app-path", "${input:appPath}",
+				"--port", "8080",
+				"--socket", "/run/podman/podman.sock"
+			],
+			"env": {
+				"LOG_LEVEL": "DEBUG"
+			},
+			"cwd": "${workspaceFolder}"
+		}
+	],
+	"inputs": [
+		{
+			"id": "appPath",
+			"type": "promptString",
+			"description": "PodNest app path (e.g. /opt/podnest)",
+			"default": "/opt/podnest"
+		}
+	]
+}

@@ -453,6 +453,16 @@ Day-to-day usage, configuration, and the full API reference are documented in th
 
 ---
 
+## Development Container (VS Code)
+
+Install the VS Code Dev Containers extension, start Docker (or a compatible engine), and run **Dev Containers: Reopen in Container**.
+
+Run **Run PodNest** (`Ctrl+Shift+B`) or **Debug PodNest (serve)** (`F5`), then open `http://localhost:8080`. The initial `admin` password appears once in the terminal or debug console. After frontend changes, run **Build frontend assets** and restart PodNest.
+
+The container runs as root in privileged mode; use only with trusted code. Data in `/opt/podnest` and Podman storage is lost on rebuild or removal unless persisted with mounts.
+
+---
+
 ## Security Policy
 
 Please do not open a public issue, pull request, or discussion for a security problem. Report it privately through the repository's **Security** tab (**Report a vulnerability**) or by email — see [SECURITY.md](SECURITY.md) for what to include, what to expect, and what is in scope.

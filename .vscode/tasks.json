@@ -1,0 +1,49 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run PodNest",
+			"detail": "Start the PodNest UI/API on http://localhost:8080 without the debugger",
+			"type": "shell",
+			"command": "go",
+			"args": [
+				"run", ".", "serve",
+				"--app-path", "/opt/podnest",
+				"--port", "8080",
+				"--socket", "/run/podman/podman.sock"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}",
+				"env": { "LOG_LEVEL": "DEBUG" }
+			},
+			"isBackground": true,
+			"problemMatcher": {
+				"owner": "go",
+				"pattern": { "regexp": "^$" },
+				"background": {
+					"activeOnStart": true,
+					"beginsPattern": "PodNest starting",
+					"endsPattern": "PodNest started on"
+				}
+			},
+			"presentation": { "panel": "dedicated", "reveal": "always" },
+			"group": { "kind": "build", "isDefault": true }
+		},
+		{
+			"label": "Build frontend assets",
+			"detail": "npm run build — rebuild vendor, CSS and JS bundles embedded into the binary",
+			"type": "npm",
+			"script": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "Watch frontend assets",
+			"detail": "npm run watch — rebuild CSS/JS on change (restart PodNest to pick them up)",
+			"type": "npm",
+			"script": "watch",
+			"isBackground": true,
+			"problemMatcher": [],
+			"presentation": { "panel": "dedicated" }
+		}
+	]
+}
